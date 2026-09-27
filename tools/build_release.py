@@ -56,8 +56,14 @@ javac_args('api',['-encoding','UTF-8','-source','8','-target','8','-bootclasspat
 sources=sorted((ROOT/'app/java').rglob('*.java'))+sorted((OUT/'generated').rglob('*.java'))
 javac_args('app',['-encoding','UTF-8','-source','8','-target','8','-bootclasspath',str(ANDROID)+os.pathsep+str(BT/'core-lambda-stubs.jar'),
     '-classpath',str(xposed)+os.pathsep+str(OUT/'ui-api'),'-d',OUT/'classes',*sources])
-run(JAVA/('java'+EXE),'-cp',BT/'lib/d8.jar','com.android.tools.r8.D8','--min-api','28','--lib',ANDROID,
-    '--classpath',xposed,'--classpath',OUT/'ui-api','--output',OUT/'dex',*sorted((OUT/'classes').rglob('*.class')))
+# Use the Java launcher's argument file as well: a fresh checkout in a longer
+# Windows path can exceed CreateProcess's command-line limit with all class files.
+d8_args=OUT/'d8.args'
+d8_args.write_text('\n'.join(json.dumps(str(a).replace('\\','/')) for a in [
+    '-cp',BT/'lib/d8.jar','com.android.tools.r8.D8','--min-api','28','--lib',ANDROID,
+    '--classpath',xposed,'--classpath',OUT/'ui-api','--output',OUT/'dex',
+    *sorted((OUT/'classes').rglob('*.class'))]),encoding='utf8')
+run(JAVA/('java'+EXE),'@'+str(d8_args))
 native=ROOT/'target/aarch64-linux-android/release/libalive_clean.so'
 with zipfile.ZipFile(OUT/'base.apk') as base,zipfile.ZipFile(OUT/'unsigned.apk','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
     for entry in base.infolist():
