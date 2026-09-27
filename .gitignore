@@ -20,6 +20,7 @@ __pycache__/
 !/tools/build_release.py
 !/tools/check_clock_scope.py
 !/tools/check_layout.py
+!/tools/check_platform_provider.py
 !/tools/check_hans_lease.py
 !/tools/check_render_lifecycle.py
 !/tools/import_cosmic.py
@@ -27,6 +28,14 @@ __pycache__/
 !/tools/import_bubble.py
 !/tools/import_settings_ui.py
 !/tools/import_notification_effects.py
+!/tools/import_vivo_runtime.py
+!/tools/check_vivo_runtime.py
+!/tools/check_photo_crop.py
+!/tools/import_vivo_editor_ui.py
+!/tools/extract_vivo_clocks.py
+!/tools/check_vivo_clock_material.py
+!/tools/import_vivo_clocks.py
+!/tools/check_vivo_clocks.py
 !/tools/check_notification_effects.py
 !/tools/import_clock_fonts.py
 !/tools/check_native_clock_fonts.py

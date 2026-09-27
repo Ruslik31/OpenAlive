@@ -6,7 +6,7 @@ import java.util.LinkedHashSet;
 
 /** Authenticated scene delivery and frame completion feedback; no per-frame IPC. */
 final class SceneChannel {
-    interface Listener {void scene(int mode,boolean animate,long time,int phase,long clockToken);void region(AodRegion area);void disconnected();}
+    interface Listener {void scene(int mode,boolean animate,long time,int phase,long clockToken,float nightLevel,float aodMask);void region(AodRegion area);void disconnected();}
     private static final LinkedHashSet<Listener> listeners=new LinkedHashSet<>();
     private static Messenger messenger;
     private static volatile Messenger clockFeedback;
@@ -36,7 +36,7 @@ final class SceneChannel {
                     if(lastScene!=null&&time<lastScene.getLong("time",0))return true;
                     lastScene=new Bundle(b);
                     {if(Diagnostics.TRACE)android.util.Log.i("AliveClean","Scene transport=binder mode="+mode+" delayMs="+(SystemClock.uptimeMillis()-time));}
-                    for(Listener l:listeners)l.scene(mode,b.getBoolean("animate",true),time,b.getInt("phase",0),b.getLong("clock_wake",0));
+                    for(Listener l:listeners)l.scene(mode,b.getBoolean("animate",true),time,b.getInt("phase",0),b.getLong("clock_wake",0),b.getFloat("vivo_night_level",Float.NaN),b.getFloat("vivo_aod_mask",Float.NaN));
                 }else if(message.what==2){
                     AodRegion area=decode(b);if(area==null)return true;lastArea=area;
                     for(Listener l:listeners)l.region(area);
@@ -65,7 +65,7 @@ final class SceneChannel {
     static void add(Listener listener){
         listeners.add(listener);
         if(lastArea!=null)listener.region(lastArea);
-        if(lastScene!=null)listener.scene(lastScene.getInt("mode"),false,lastScene.getLong("time"),lastScene.getInt("phase",0),lastScene.getLong("clock_wake",0));
+        if(lastScene!=null)listener.scene(lastScene.getInt("mode"),false,lastScene.getLong("time"),lastScene.getInt("phase",0),lastScene.getLong("clock_wake",0),lastScene.getFloat("vivo_night_level",Float.NaN),lastScene.getFloat("vivo_aod_mask",Float.NaN));
     }
     static void remove(Listener listener){listeners.remove(listener);}
     static AodRegion decode(Bundle b){

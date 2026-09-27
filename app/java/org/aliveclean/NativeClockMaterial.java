@@ -14,14 +14,20 @@ final class NativeClockMaterial implements AutoCloseable {
     private View target;
     private Object builder;
     private Class<?> type,vec2,vec4,config;
-    private boolean enabled,closed,failed;
+    private boolean enabled,closed,effectApplied;
+    private int failures;
+    private long retryAt;
     private boolean soft;
     private boolean wallpaperSoft;
+    private boolean vivoGlass;
+    private int vivoMode;
+    private NativeVivoClockMaterial vivo;
+    private final java.util.IdentityHashMap<View,NativeVivoClockMaterial> vivoParts=new java.util.IdentityHashMap<>();
     private final android.graphics.RectF lastRect=new android.graphics.RectF();
     private final android.view.ViewTreeObserver.OnPreDrawListener preDraw=()->{
         if(enabled&&target!=null&&(soft||hasWallpaper())){
             android.graphics.RectF rect=wallpaperRect();
-            if(!rect.equals(lastRect))refresh();
+            if(!effectApplied||!rect.equals(lastRect)||!vivoParts.isEmpty()||(vivoGlass&&vivo!=null&&vivo.needsGlyph()))refresh();
         }
         return true;
     };
@@ -29,24 +35,58 @@ final class NativeClockMaterial implements AutoCloseable {
     NativeClockMaterial(View root){this.root=root;root.getViewTreeObserver().addOnPreDrawListener(preDraw);}
     boolean hasWallpaper(){return wallpaper!=null&&!wallpaper.isRecycled();}
     Bitmap wallpaper(){return hasWallpaper()?wallpaper:null;}
-    boolean applied(){return builder!=null&&enabled&&(soft||hasWallpaper());}
+    boolean applied(){
+        if(!enabled||!effectApplied)return false;
+        if(!vivoGlass)return builder!=null&&(soft||hasWallpaper());
+        if(vivoParts.isEmpty())return vivo!=null&&vivo.applied();
+        boolean visible=false;
+        for(java.util.Map.Entry<View,NativeVivoClockMaterial> part:vivoParts.entrySet())if(part.getKey().getVisibility()==View.VISIBLE){visible=true;if(!part.getValue().applied())return false;}
+        return visible;
+    }
     void wallpaper(Bitmap bitmap){
         // The protocol owns this bitmap. Never recycle or mutate it here.
+        if(vivo!=null)vivo.wallpaperChanged();
+        for(NativeVivoClockMaterial part:vivoParts.values())part.wallpaperChanged();
         wallpaper=bitmap!=null&&!bitmap.isRecycled()?bitmap:null;refresh();
     }
     void scene(View face,int mode){
+        if(target!=face||vivoMode!=mode){retryAt=0;failures=0;}
         if(target!=face){
             clear();
             if(target!=null)target.removeOnLayoutChangeListener(layout);
             target=face;if(target!=null)target.addOnLayoutChangeListener(layout);
         }
-        soft=mode==5;wallpaperSoft=mode==6;enabled=mode==1||soft||wallpaperSoft;refresh();
+        if(vivoGlass!=(mode==7||mode==8))clear();
+        soft=mode==5;wallpaperSoft=mode==6;vivoGlass=mode==7||mode==8;vivoMode=mode;enabled=mode==1||soft||wallpaperSoft||vivoGlass;refresh();
     }
     private void refresh(){
-        if(closed||failed||target==null)return;
+        if(closed||target==null)return;
         if(!enabled||(!soft&&!hasWallpaper())){clear();return;}
         if(target.getWidth()<=0||target.getHeight()<=0)return;
+        if(android.os.SystemClock.uptimeMillis()<retryAt)return;
         try{
+            if(vivoGlass){
+                if(target instanceof NativeVivoClockFace){
+                    NativeVivoClockFace face=(NativeVivoClockFace)target;
+                    // Original Vivo material metadata marks only the time digits
+                    // as vitrifiable. Keep date/week on the ordinary text path,
+                    // preserving the host's text color and antialiasing.
+                    for(android.widget.TextView view:face.materialViews()){
+                        if(view.getVisibility()!=View.VISIBLE||!face.glassView(view))continue;
+                        NativeVivoClockMaterial part=vivoParts.get(view);
+                        if(part==null){part=new NativeVivoClockMaterial(view,root.getContext().getAssets());vivoParts.put(view,part);}
+                        part.mode(vivoMode==7&&face.glassView(view));
+                        part.update(wallpaper,wallpaperRect(view));
+                    }
+                    lastRect.set(wallpaperRect());effectApplied=true;failures=0;retryAt=0;return;
+                }
+                // Original faces can carry a vendor resource context (e.g. the
+                // isolated MIUIAod APK). Material code belongs to our module.
+                if(vivo==null)vivo=new NativeVivoClockMaterial(target,root.getContext().getAssets());
+                vivo.mode(vivoMode==7);
+                lastRect.set(wallpaperRect());vivo.update(wallpaper,lastRect);
+                effectApplied=true;failures=0;retryAt=0;target.invalidate();return;
+            }
             if(builder==null){
                 Context plugin=root.getContext().createPackageContext("com.oplus.keyguard.personality.clocks",Context.CONTEXT_INCLUDE_CODE|Context.CONTEXT_IGNORE_SECURITY);
                 ClassLoader loader=plugin.getClassLoader();String ns="com.oplus.keyguard.clock.common.view.livecontent.effect.shader.glass.";
@@ -83,9 +123,19 @@ final class NativeClockMaterial implements AutoCloseable {
             RenderEffect effect=(RenderEffect)type.getMethod("getRenderEffect").invoke(builder);
             if(effect==null)throw new IllegalStateException("Native material effect is empty");
             target.setRenderEffect(effect);
-        }catch(Exception failure){failed=true;clear();NativeClockLoadState.failure("Native clock glass",failure);}
+            effectApplied=true;failures=0;retryAt=0;target.invalidate();
+        }catch(Exception failure){
+            clear();
+            // A package/context or bitmap can be temporarily unavailable. Retry
+            // on a later input/frame, with a bounded backoff and no private loop.
+            retryAt=android.os.SystemClock.uptimeMillis()+Math.min(30000L,250L<<Math.min(failures++,7));
+            NativeClockLoadState.failure("Native clock glass",failure);
+        }
     }
     private android.graphics.RectF wallpaperRect(){
+        return wallpaperRect(target);
+    }
+    private android.graphics.RectF wallpaperRect(View target){
         android.graphics.RectF rect=new android.graphics.RectF(0,0,target.getWidth(),target.getHeight());
         android.graphics.Matrix transform=new android.graphics.Matrix();target.transformMatrixToGlobal(transform);
         View host=NativeClockEditor.findRoot(root);
@@ -97,10 +147,18 @@ final class NativeClockMaterial implements AutoCloseable {
         transform.mapRect(rect);return rect;
     }
     private void clear(){
+        effectApplied=false;
+        if(vivo!=null){vivo.close();vivo=null;}
+        for(NativeVivoClockMaterial part:vivoParts.values())part.close();vivoParts.clear();
         if(target!=null)target.setRenderEffect(null);
         if(builder!=null){try{type.getMethod("release").invoke(builder);}catch(Exception ignored){}builder=null;}
     }
     void settled(){refresh();}
+    void glyphChanged(){
+        if(vivo!=null)vivo.invalidateGlyph();
+        for(NativeVivoClockMaterial part:vivoParts.values())part.invalidateGlyph();
+        if(vivo!=null||!vivoParts.isEmpty()){effectApplied=false;root.invalidate();}else refresh();
+    }
     static Bitmap softGradient(int width,int height){
         Bitmap bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
         android.graphics.Paint paint=new android.graphics.Paint(3);

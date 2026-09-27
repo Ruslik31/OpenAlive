@@ -55,11 +55,16 @@ public final class HomeActivity extends Activity {
             replaceAnchor(lp,ui.id("id","system_layout_container"),wallpaper.getId());
             ((ViewGroup.MarginLayoutParams)lp).topMargin=Math.round(12*getResources().getDisplayMetrics().density);
             parent.addView(alive,lp);firstText(alive).setText("Alive 壁纸");alive.setOnClickListener(v->openEditor(1,true));
-            int extensionAnchor=alive.getId();
+            View vivo=ui.inflate("view_system_center_wallpaper",parent);vivo.setId(View.generateViewId());ui.cardBackground(vivo);
+            ViewGroup.LayoutParams vivoLp=lp.getClass().getConstructor(ViewGroup.LayoutParams.class).newInstance(lp);
+            for(java.lang.reflect.Field field:lp.getClass().getFields())if(!java.lang.reflect.Modifier.isStatic(field.getModifiers())&&field.getType().isPrimitive())field.set(vivoLp,field.get(lp));
+            replaceAnchor(vivoLp,wallpaper.getId(),alive.getId());parent.addView(vivo,vivoLp);firstText(vivo).setText("Vivo Alive 壁纸");
+            vivo.setOnClickListener(v->startActivity(new Intent(this,VivoLibraryActivity.class)));
+            int extensionAnchor=vivo.getId();
             for(boolean font:new boolean[]{false,true}){
                 View tile=ui.find(root,font?"system_center_font":"system_center_theme");Intent destination=ThemeLinks.resolve(this,font);
                 tile.setVisibility(destination==null?View.GONE:View.VISIBLE);
-                ViewGroup.LayoutParams tileLp=tile.getLayoutParams();replaceAnchor(tileLp,wallpaper.getId(),alive.getId());tile.setLayoutParams(tileLp);
+                ViewGroup.LayoutParams tileLp=tile.getLayoutParams();replaceAnchor(tileLp,wallpaper.getId(),vivo.getId());tile.setLayoutParams(tileLp);
                 topGap(tile,12);
                 ((TextView)ui.find(tile,"item_text")).setText(font?"字体":"主题");
                 ((ImageView)ui.find(tile,"item_image")).setImageResource(ui.id("drawable",font?"icon_system_setting_font":"icon_system_setting_theme"));

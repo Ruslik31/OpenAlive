@@ -30,15 +30,28 @@ final class PlatformProvider implements AutoCloseable {
         release=activityManager.getMethod("removeContentProviderExternalAsUser",String.class,IBinder.class,int.class);
         call=Class.forName("android.content.IContentProvider").getMethod("call",AttributionSource.class,String.class,String.class,String.class,Bundle.class);
         source=new AttributionSource.Builder(1000).setPackageName("android").build();
-        Object holder=invoke(activityManager.getMethod("getContentProviderExternal",String.class,int.class,IBinder.class,String.class),manager,authority,user,token,"AliveClean");
-        if(holder==null)throw new IllegalStateException("Provider unavailable: "+authority);
-        try{
-            provider=holder.getClass().getField("provider").get(holder);
-            if(provider==null)throw new IllegalStateException("Provider binder unavailable: "+authority);
-        }catch(Exception error){
-            try{invoke(release,manager,authority,token,user);}catch(Exception cleanup){error.addSuppressed(cleanup);}
-            throw error;
+        Method acquire=activityManager.getMethod("getContentProviderExternal",String.class,int.class,IBinder.class,String.class);
+        // The AOD process can be between teardown and restart after long uptime.
+        // Retry acquiring a lease, never replay a provider transaction: a setter
+        // may already have taken effect when its reply is lost.
+        Object resolved=null;
+        int[] delays={0,200,600,1200};
+        for(int attempt=0;attempt<delays.length;attempt++){
+            if(delays[attempt]>0)Thread.sleep(delays[attempt]);
+            Object holder=invoke(acquire,manager,authority,user,token,"AliveClean");
+            if(holder==null)continue;
+            try{
+                resolved=holder.getClass().getField("provider").get(holder);
+            }catch(Exception error){
+                try{invoke(release,manager,authority,token,user);}catch(Exception cleanup){error.addSuppressed(cleanup);}
+                throw error;
+            }
+            if(resolved!=null)break;
+            // A holder without its binder still owns an external reference.
+            invoke(release,manager,authority,token,user);
         }
+        if(resolved==null)throw new IllegalStateException("Provider unavailable after bounded reconnect: "+authority);
+        provider=resolved;
     }
     Bundle call(String method,String argument,Bundle extras)throws Exception {
         if(closed)throw new IllegalStateException("Provider lease is closed");

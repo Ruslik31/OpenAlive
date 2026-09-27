@@ -20,7 +20,8 @@ public final class SceneProvider extends ContentProvider {
             if("connect".equals(method))result.putBinder("channel",SceneChannel.connect(c,extras==null?null:extras.getBinder("owner"),extras==null?0:extras.getInt("clock_api",0),extras==null?null:extras.getString("clock_error"),extras==null?null:extras.getBinder("clock_feedback")));
             SceneOptions options=new SceneOptions(c.getSharedPreferences(SceneOptions.APPLIED,0));
             result.putInt("aod",options.aod);
-            result.putBoolean("continuous_aod",options.cosmic!=0?options.cosmicContinuousAod:options.aod==0&&options.sailContinuousAod);
+            result.putBoolean("vivo_wallpaper",options.vivo!=null);
+            result.putBoolean("continuous_aod",options.vivo!=null?options.vivo.animateInAod():options.cosmic!=0?options.cosmicContinuousAod:options.aod==0&&options.sailContinuousAod);
             return result;
         }catch(Exception error){throw new IllegalStateException("Scene channel unavailable",error);}
     }

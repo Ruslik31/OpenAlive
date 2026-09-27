@@ -1,0 +1,1 @@
+package android.app; import android.os.IBinder; public interface IActivityManager {Object getContentProviderExternal(String a,int u,IBinder b,String tag); void removeContentProviderExternalAsUser(String a,IBinder b,int u);}

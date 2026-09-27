@@ -1,0 +1,1 @@
+package android.content; public class AttributionSource {public static class Builder {public Builder(int uid){} public Builder setPackageName(String s){return this;} public AttributionSource build(){return new AttributionSource();}}}

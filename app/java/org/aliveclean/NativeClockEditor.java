@@ -182,6 +182,17 @@ final class NativeClockEditor {
             if(thumb==null)throw new IllegalStateException("Original HyperOS preview unavailable");
             panel.add(id,style.title,config.toString(),thumb);
         }
+        for(NativeVivoClockStyles.Style style:NativeVivoClockStyles.all(originalContext)){
+            JSONObject config=styleConfig(style.id,inner);
+            if(!fallback.isEmpty())config.put("nativeReturnStyle",fallback);
+            Bitmap thumb;
+            try(java.io.InputStream in=originalContext.getAssets().open("native-clock/vivo/previews/"+style.key+".png")){
+                android.graphics.BitmapFactory.Options options=new android.graphics.BitmapFactory.Options();options.inSampleSize=2;
+                thumb=android.graphics.BitmapFactory.decodeStream(in,null,options);
+            }
+            if(thumb==null)throw new IllegalStateException("Original Vivo preview unavailable: "+style.key);
+            panel.add(style.id,style.title,config.toString(),thumb);
+        }
         if(NativeClockProvider.contains(selected)&&!fallback.isEmpty()){
             JSONObject previous=new JSONObject(fallback);
             if(!NativeClockProvider.contains(previous.getString("pkg")))
@@ -226,23 +237,23 @@ final class NativeClockEditor {
         Dialog[] dialog={null};
         NativeClockStylePanel panel=cards(themed,moduleContext,host,()->dismissForSwitch(dialog[0]),committed);
         type.getMethod("addCustomContent",View.class).invoke(builder,panel);
-        addMaterialPanel(builder,type,loader,host,outer,committed,themed);
+        Runnable closeColors=addMaterialPanel(builder,type,loader,host,outer,changed,themed);
         dialog[0]=(Dialog)type.getMethod("safeShow").invoke(builder);
         if(dialog[0]!=null&&dialog[0].isShowing()){
             android.os.Bundle state=new android.os.Bundle();
             state.putInt("clockStyleDialogPanelType",0);
             state.putFloat("editPanelHeight",0f);
-            dialog[0].setOnDismissListener(ignored->notifyHost(outer,"onStyleDialogHidden",state));
+            dialog[0].setOnDismissListener(ignored->{closeColors.run();notifyHost(outer,"onStyleDialogHidden",state);});
             // ColorOS marks the draft editable here, just as it does for widgets.
             notifyHost(outer,"onStyleDialogShown",state);
         }
         return dialog[0];
     }
 
-    private static void addMaterialPanel(Object builder,Class<?> type,ClassLoader loader,
+    private static Runnable addMaterialPanel(Object builder,Class<?> type,ClassLoader loader,
             NativeClockEditSession.Host host,View root,Runnable changed,Context themed)throws Exception{
         JSONObject current=new JSONObject(host.read());
-        if(!NativeClockProvider.contains(current.getString("pkg")))return;
+        if(!NativeClockProvider.contains(current.getString("pkg")))return ()->{};
         JSONObject config=new JSONObject(current.getString("clockStyleConfig"));
         android.widget.TextView soft=new android.widget.TextView(themed);
         soft.setText("特殊效果1");soft.setContentDescription("特殊效果1");soft.setTag("openalive_special_clock_color");
@@ -270,21 +281,27 @@ final class NativeClockEditor {
             followBackground.addState(selected?new int[]{android.R.attr.state_selected}:new int[0],background);
         }
         wallpaperSoft.setBackground(followBackground);wallpaperSoft.setSelected(NativeOriginalClockPlugin.colorMode(config)==6);
+        android.widget.TextView vivo=new android.widget.TextView(themed);
+        vivo.setText("Vivo 玻璃");vivo.setContentDescription("Vivo 玻璃，实时跟随壁纸");
+        vivo.setTag("openalive_vivo_clock_glass");vivo.setGravity(android.view.Gravity.CENTER);
+        vivo.setTextSize(16);vivo.setTextColor(0xffeeeeee);vivo.setPadding(softPad,softPad,softPad,softPad);
+        vivo.setBackground(followBackground.getConstantState().newDrawable().mutate());
+        vivo.setSelected(NativeOriginalClockPlugin.colorMode(config)==7);
+        android.widget.TextView vivoBlur=new android.widget.TextView(themed);
+        vivoBlur.setText("Vivo 普通模糊");vivoBlur.setContentDescription("Vivo 普通模糊，实时跟随壁纸");
+        vivoBlur.setTag("openalive_vivo_clock_blur");vivoBlur.setGravity(android.view.Gravity.CENTER);
+        vivoBlur.setTextSize(16);vivoBlur.setTextColor(0xffeeeeee);vivoBlur.setPadding(softPad,softPad,softPad,softPad);
+        vivoBlur.setBackground(followBackground.getConstantState().newDrawable().mutate());vivoBlur.setSelected(NativeOriginalClockPlugin.colorMode(config)==8);
+        boolean[] rebinding={true};
         Class<?> listener=loader.loadClass("com.oplus.keyguard.clock.common.callback.OnColorSelectedListener");
         Object selection=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{listener},(proxy,method,args)->{
             if(!method.getName().equals("onColorSelected"))return null;
-            JSONObject outer=new JSONObject(host.read());
-            if(!NativeClockProvider.contains(outer.getString("pkg")))return null;
-            JSONObject data=new JSONObject(outer.getString("clockStyleConfig"));
+            if(rebinding[0])return null;
+            if(!current.getString("pkg").equals(new JSONObject(host.read()).optString("pkg")))return null;
             int mode=(Integer)args[0];
-            soft.setSelected(false);
-            wallpaperSoft.setSelected(false);
-            NativeOriginalClockPlugin.writeColorMode(data,mode==0?1:mode==1?2:mode==2?4:3);
-            data.put("color",(Integer)args[1]);
-            org.json.JSONArray hsl=new org.json.JSONArray();
-            for(float component:(float[])args[2])hsl.put(component);
-            data.put("primaryColorDepthHSL",hsl);
-            outer.put("clockStyleConfig",data.toString());host.write(outer.toString());changed.run();return null;
+            editColor(root,mode==0?1:mode==1?2:mode==2?4:3,(Integer)args[1],(float[])args[2]);
+            for(View button:new View[]{soft,wallpaperSoft,vivo,vivoBlur})button.setSelected(false);
+            changed.run();return null;
         });
         android.os.Bundle info=colorInfo(root);
         Class<?> infoType=loader.loadClass("com.oplus.keyguard.clock.common.color.wallpaper.WallpaperColorInfo");
@@ -300,24 +317,27 @@ final class NativeClockEditor {
                 loader.loadClass("com.oplus.keyguard.clock.common.dialog.EditPanelBuilder$ReusablePanelViews"),listener,int[].class)
                 .invoke(builder,new int[]{0,2,1,3},mode>=5?-1:mode==1?0:mode==4?2:mode==3?3:1,config.optInt("color",0xffffffff),
                         depth,android.text.format.DateFormat.format("HH:mm",System.currentTimeMillis()).toString(),wallpaper,null,selection,new int[0]);
-        soft.setOnClickListener(v->{
-            try{
-                rebindColor(builder,type,loader,infoType,wallpaper,-1);
-                JSONObject outer=new JSONObject(host.read()),data=new JSONObject(outer.getString("clockStyleConfig"));
-                NativeOriginalClockPlugin.writeColorMode(data,5);data.remove("primaryColorDepthHSL");
-                outer.put("clockStyleConfig",data.toString());host.write(outer.toString());soft.setSelected(true);wallpaperSoft.setSelected(false);changed.run();
-            }catch(Exception failure){throw new IllegalStateException("Select soft clock color",failure);}
-        });
-        wallpaperSoft.setOnClickListener(v->{
-            try{
-                rebindColor(builder,type,loader,infoType,wallpaper,-1);
-                JSONObject outer=new JSONObject(host.read()),data=new JSONObject(outer.getString("clockStyleConfig"));
-                NativeOriginalClockPlugin.writeColorMode(data,6);data.remove("primaryColorDepthHSL");
-                outer.put("clockStyleConfig",data.toString());host.write(outer.toString());wallpaperSoft.setSelected(true);soft.setSelected(false);changed.run();
-            }catch(Exception failure){throw new IllegalStateException("Select wallpaper soft material",failure);}
-        });
-        type.getMethod("addCustomContent",View.class).invoke(builder,wallpaperSoft);
-        type.getMethod("addCustomContent",View.class).invoke(builder,soft);
+        // Initial population and programmatic deselection must never become an
+        // edit. The native lightness controller posts its callback to the panel.
+        cancelColorNotification(builder,type);
+        rebinding[0]=false;
+        View[] materialButtons={wallpaperSoft,soft,vivo,vivoBlur};
+        int[] materialModes={6,5,7,8};
+        for(int index=0;index<materialButtons.length;index++){
+            final int selectedMode=materialModes[index];
+            View button=materialButtons[index];
+            button.setOnClickListener(v->{
+                try{
+                    rebinding[0]=true;
+                    try{rebindColor(builder,type,loader,infoType,wallpaper,-1);}
+                    finally{rebinding[0]=false;}
+                    editColor(root,selectedMode,null,null);
+                    for(View item:materialButtons)item.setSelected(item==button);
+                    changed.run();
+                }catch(Exception failure){throw new IllegalStateException("Select clock material "+selectedMode,failure);}
+            });
+            type.getMethod("addCustomContent",View.class).invoke(builder,button);
+        }
         android.widget.TextView reset=new android.widget.TextView(themed);
         reset.setText("恢复默认颜色");reset.setContentDescription("恢复默认颜色");reset.setTag("openalive_reset_clock_color");
         reset.setTextSize(14);reset.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -338,29 +358,50 @@ final class NativeClockEditor {
         reset.setCompoundDrawablesRelative(icon,null,null,null);reset.setCompoundDrawablePadding(Math.round(10*density));
         reset.setOnClickListener(v->{
             try{
-                // Return to automatic contrast, without retaining a manual hue
-                // or depth adjustment. Rebind the native picker as well as the draft.
-                rebindColor(builder,type,loader,infoType,wallpaper,1);soft.setSelected(false);wallpaperSoft.setSelected(false);
-                JSONObject outer=new JSONObject(host.read());
-                JSONObject data=new JSONObject(outer.getString("clockStyleConfig"));
-                NativeOriginalClockPlugin.writeColorMode(data,2);data.put("color",0xffffffff);data.remove("primaryColorDepthHSL");
-                outer.put("clockStyleConfig",data.toString());host.write(outer.toString());changed.run();
+                rebinding[0]=true;
+                try{rebindColor(builder,type,loader,infoType,wallpaper,1);}
+                finally{rebinding[0]=false;}
+                editColor(root,2,0xffffffff,null);
+                for(View button:materialButtons)button.setSelected(false);
+                changed.run();
             }catch(Exception failure){throw new IllegalStateException("Reset clock color",failure);}
         });
         type.getMethod("addCustomContent",View.class).invoke(builder,reset);
+        return ()->{
+            rebinding[0]=true;
+            try{cancelColorNotification(builder,type);}
+            catch(Exception failure){NativeClockLoadState.failure("Close clock color panel",failure);}
+        };
     }
 
     private static void rebindColor(Object builder,Class<?> type,ClassLoader loader,Class<?> infoType,Object wallpaper,int mode)throws Exception{
         java.lang.reflect.Field colorPanel=type.getDeclaredField("colorSettingsPanel");colorPanel.setAccessible(true);
         Object nativePanel=colorPanel.get(builder);
-        java.lang.reflect.Field controllerField=nativePanel.getClass().getDeclaredField("colorSettingsController");controllerField.setAccessible(true);
-        Object controller=controllerField.get(nativePanel);
-        java.lang.reflect.Field action=controller.getClass().getSuperclass().getDeclaredField("onNotifyColorSelectedAction");action.setAccessible(true);
-        ((View)nativePanel).removeCallbacks((Runnable)action.get(controller));
+        cancelColorNotification(builder,type);
         Object scroll=type.getMethod("getPanelCOUIScrollView").invoke(builder);
         nativePanel.getClass().getMethod("setupColor",int[].class,int.class,int.class,float[].class,
                 loader.loadClass("com.coui.appcompat.scrollview.COUIScrollView"),infoType,int[].class)
                 .invoke(nativePanel,new int[]{0,2,1,3},mode,0xffffffff,new float[]{0,0,1},scroll,wallpaper,new int[0]);
+        cancelColorNotification(builder,type);
+    }
+
+    private static void cancelColorNotification(Object builder,Class<?> type)throws Exception{
+        java.lang.reflect.Field field=type.getDeclaredField("colorSettingsPanel");field.setAccessible(true);
+        Object panel=field.get(builder);
+        java.lang.reflect.Field controllerField=panel.getClass().getDeclaredField("colorSettingsController");controllerField.setAccessible(true);
+        Object controller=controllerField.get(panel);
+        java.lang.reflect.Field action=controller.getClass().getSuperclass().getDeclaredField("onNotifyColorSelectedAction");action.setAccessible(true);
+        ((View)panel).removeCallbacks((Runnable)action.get(controller));
+    }
+
+    static void editColor(View root,int mode,Integer color,float[] depth)throws Exception{
+        Object container=root.getClass().getMethod("getClockPluginContainer").invoke(root);
+        android.os.Bundle edit=new android.os.Bundle();edit.putInt("mode",mode);
+        if(color!=null)edit.putInt("color",color);
+        if(depth!=null)edit.putFloatArray("depth",depth.clone());
+        android.os.Bundle accepted=(android.os.Bundle)command(container,"openAliveEditColor",edit);
+        if(accepted==null||NativeOriginalClockPlugin.colorMode(new JSONObject(accepted.getString("styleData")))!=mode)
+            throw new IllegalStateException("Clock did not accept color edit");
     }
 
     private static android.os.Bundle colorInfo(View root)throws Exception{

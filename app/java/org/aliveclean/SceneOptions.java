@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 final class SceneOptions {
     static final String APPLIED="scene", DRAFT="scene.preview";
     final int aod,lock,home,color,cosmic;
+    final VivoOptions vivo;
     final String photo,homePhoto,framePhoto;
     final boolean followLock,framePair,cosmicKeepLock;
     final boolean cosmicContinuousAod,cosmicContinuousHome,sailContinuousAod;
@@ -13,6 +14,7 @@ final class SceneOptions {
 
     SceneOptions(SharedPreferences prefs) {
         int a=prefs.getInt("aod",0),l=prefs.getInt("lock",2),h=prefs.getInt("home",6);
+        vivo=VivoOptions.parse(prefs.getString("vivo",""));
         int c=prefs.getInt("cosmic",0);cosmic=c==1||c==3||c==4||(c>=6&&c<=15)||(c>=101&&c<=105)||(c>=201&&c<=205)?c:0;
         cosmicKeepLock=prefs.getBoolean("cosmic_keep_lock",false);
         cosmicContinuousAod=prefs.getBoolean("cosmic_continuous_aod",true);
@@ -40,7 +42,7 @@ final class SceneOptions {
     boolean pairedFrame(){return aod==1&&framePair;}
 
     boolean save(SharedPreferences target) {
-        return target.edit().putInt("aod",aod).putInt("cosmic",cosmic).putInt("lock",lock)
+        return target.edit().putString("vivo",vivo==null?"":vivo.json()).putInt("aod",aod).putInt("cosmic",cosmic).putInt("lock",lock)
             .putBoolean("cosmic_keep_lock",cosmicKeepLock)
             .putBoolean("cosmic_continuous_aod",cosmicContinuousAod)
             .putBoolean("cosmic_continuous_home",cosmicContinuousHome)

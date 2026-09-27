@@ -30,6 +30,16 @@ final class PhotoSources {
         }
         throw new IllegalArgumentException("Photo source: "+source);
     }
+    static Intent vivoMedia(Context context,String mime,boolean multiple){
+        Intent pick=new Intent(Intent.ACTION_PICK).setType(mime)
+            .putExtra(Intent.EXTRA_ALLOW_MULTIPLE,multiple)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        Intent gallery=installed(context,pick,new String[]{"com.coloros.gallery3d","com.oplus.gallery3d"});
+        if(gallery!=null)return gallery;
+        return new Intent(Intent.ACTION_OPEN_DOCUMENT).setType(mime)
+            .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,multiple)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    }
     private static Intent installed(Context context,Intent base,String[] packages){
         for(String name:packages){
             Intent intent=new Intent(base).setPackage(name);

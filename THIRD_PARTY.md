@@ -18,7 +18,11 @@
 - `app/assets/native-clock/runtime/hyperos/fonts/`：澎湃备用机系统分区的原始时钟字体，供独立澎湃控件使用，未修改字形或度量；来源及校验值见上级目录 `source.json`。
 - `app/assets/native-clock/runtime/hyperos/runtime.apk`：备用机 MIUIAod 的原始程序与资源，供独立类加载器调用其中的时钟控件；版本、来源及校验值见同目录 `source.json`，文件未修改。
 - `app/assets/native-clock/previews/`：使用上述原始澎湃控件及魅族 SystemUIEditor 原始透视时钟控件绘制的选择器缩略图；模板参数、原始运行库和图片校验值见 `source.json`。
+- `app/assets/native-clock/vivo/`：OriginOS SystemUIPlugin 原始时钟布局、资源表、字体和玻璃/模糊着色器。`layouts.apk` 保留原始 DEX，隔离加载其中的布局控件，不启动 Vivo 服务；来源和校验值见 `source.json`。`previews/` 由适配后的原始布局绘制。该目录资源保留原权利人的权利，不属于本项目 MIT 授权范围。
 
 资源来源标注不代表魅族或其他权利人授予了再分发或商用许可。使用这些资源时，仍需遵守其适用许可；MIT 仅授权本项目有权授权的自实现代码。
 
 Xposed API 82 仅用于编译，不打进 APK；运行时由 LSPosed 提供。
+
+- `app/assets/vivo/runtime/`：Vivo LiveWallpaperBox 7.0.1.02 原始程序及已下载的闪卡、光栅纹理。通过独立类加载器复用原版渲染代码，APK 与纹理内容未修改；仅重映射离线纹理路径。来源和 SHA-256 见同目录 `source.json`。这部分保留原权利人的权利，不属于本项目 MIT 授权范围。
+- `app/res/drawable/vivo_*`：Vivo BBKTheme 原始编辑器图标，来源及校验值见 `app/assets/vivo/ui-source.json`。光栅选项的原始 PAG 动画及配套 `libpag`、`libffavc` 保存在上述 Vivo 运行库中，保留其各自版权与许可。

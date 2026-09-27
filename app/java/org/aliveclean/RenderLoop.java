@@ -21,6 +21,9 @@ final class RenderLoop {
     private EGLSurface window=EGL14.EGL_NO_SURFACE;
     private long scene;
     private WallpaperRenderer cosmic;
+    private VivoEngineScene vivo;
+    private boolean vivoDarkWallpaper;
+    private float vivoAodMask=.5f;
     private long cosmicUntil;
     private boolean cosmicContinuousAod,cosmicContinuousHome,sailContinuousAod;
     private Surface attachedSurface;
@@ -53,6 +56,9 @@ final class RenderLoop {
     RenderLoop(Context context){this(context,SceneOptions.APPLIED);}
     RenderLoop(Context context,String name){this.context=context.getApplicationContext();preview=SceneOptions.DRAFT.equals(name);preferences=context.getSharedPreferences(name,0);thread.start();handler=new Handler(thread.getLooper());preferences.registerOnSharedPreferenceChangeListener(changes);}
     void attach(Surface surface,int w,int h){handler.post(()->{release();if(!surface.isValid()||w<1||h<1)return;try{init(surface,w,h);schedule();}catch(Exception e){Log.e("AliveClean","Renderer initialization failed",e);release();}});}
+    void touch(int action,float x,float y){handler.post(()->{if(vivo!=null)vivo.touch(action,x,y);});}
+    void vivoDarkWallpaper(boolean dark){handler.post(()->{vivoDarkWallpaper=dark;if(vivo!=null){vivo.darkWallpaper(dark,visible);schedule();}});}
+    void vivoCrop(float x,float y,float zoom){handler.post(()->{if(vivo!=null)try{PhotoViewport p=new PhotoViewport();p.restore(x,y,zoom);vivo.crop(p);schedule();}catch(Exception e){Log.w("AliveClean","Vivo crop failed",e);}});}
     void detach(){handler.post(()->{release();attachedSurface=null;});}
     void mode(int next){mode(next,true);}
     void clockTransition(long token){handler.post(()->{if(preview||token==seenClockToken)return;seenClockToken=token;clockToken=token;if(token!=0)schedule();});}
@@ -71,20 +77,48 @@ final class RenderLoop {
             else frameMotion.followClock(aodRegion.sceneX(),aodRegion.sceneY());
         }
     }
-    void mode(int next,boolean animate){handler.post(()->{if(mode!=next){stateReported=false;frameSample.clear();if(next==0)aodMotion.enter(System.nanoTime());else aodMotion.leave();}if(cosmic!=null&&mode!=next){cosmic.motion().change(next,animate);cosmicUntil=System.nanoTime()+5_000_000_000L;}mode=next;if(textureMotion!=null)textureMotion.change(next,animate);if(motion!=null){if(frameMotion!=null){frameMotion.change(next,motion);if(!animate)frameMotion.finish();if(!visible)frameMotion.pause(true);}motion.change(next);if(!animate)motion.finish();if(!visible)motion.pause(true);}schedule();});}
-    void visible(boolean value){handler.post(()->{if(visible==value)return;visible=value;if(cosmic!=null)cosmic.motion().pause();if(motion!=null)motion.pause(!value);if(frameMotion!=null)frameMotion.pause(!value);stopFrames();if(value){if(mode==0){long now=System.nanoTime();aodMotion.enter(now);cosmicUntil=now+5_000_000_000L;}pacer.reset();schedule();}else if(clockToken!=0)reportClock(false);});}
+    void mode(int next,boolean animate){mode(next,animate,Float.NaN,Float.NaN);}
+    void mode(int next,boolean animate,float nightLevel,float aodMask){handler.post(()->{
+        boolean lightSnapshot=(nightLevel==1f||nightLevel==.76f)&&aodMask>=0&&aodMask<1;
+        if(lightSnapshot){vivoDarkWallpaper=nightLevel<1;vivoAodMask=aodMask;}
+        if(mode!=next){stateReported=false;frameSample.clear();if(next==0)aodMotion.enter(System.nanoTime());else aodMotion.leave();}
+        if(cosmic!=null&&mode!=next){cosmic.motion().change(next,animate);cosmicUntil=System.nanoTime()+5_000_000_000L;}
+        // Apply the wake target and scene together, before any frame can be submitted.
+        if(vivo!=null&&(mode!=next||lightSnapshot)){vivo.transition(next,animate,vivoDarkWallpaper?.76f:1f,vivoAodMask);vivo.visible(visible);}
+        mode=next;if(textureMotion!=null)textureMotion.change(next,animate);if(motion!=null){if(frameMotion!=null){frameMotion.change(next,motion);if(!animate)frameMotion.finish();if(!visible)frameMotion.pause(true);}motion.change(next);if(!animate)motion.finish();if(!visible)motion.pause(true);}schedule();
+    });}
+    void visible(boolean value){handler.post(()->{if(visible==value)return;visible=value;if(vivo!=null)vivo.visible(value);if(cosmic!=null)cosmic.motion().pause();if(motion!=null)motion.pause(!value);if(frameMotion!=null)frameMotion.pause(!value);stopFrames();if(value){if(mode==0){long now=System.nanoTime();aodMotion.enter(now);cosmicUntil=now+5_000_000_000L;}pacer.reset();schedule();}else if(clockToken!=0)reportClock(false);});}
+    void resumeVivoDisplay(){handler.post(()->{
+        if(!visible||vivo==null)return;
+        vivo.visible(true);
+        // A pending vsync may belong to the previous display power state.
+        // Re-arm once per display-state change, not on every sensor sample.
+        stopFrames();pacer.reset();schedule();
+    });}
     void reload(){if(!closed){handler.removeCallbacks(reloadTask);handler.post(reloadTask);}}
-    private void reloadScene(){if(scene==0&&cosmic==null)return;try{
+    private void reloadScene(){if(scene==0&&cosmic==null&&vivo==null)return;try{
         SceneOptions options=new SceneOptions(preferences);
+        if(vivo!=null&&vivo.updateSensitivity(options.vivo))return;
+        if(vivo!=null||options.vivo!=null){Surface surface=attachedSurface;release();if(surface!=null&&surface.isValid()){init(surface,width,height);schedule();}return;}
         if((cosmic!=null)!=(options.cosmic!=0)){
             Surface surface=attachedSurface;release();
             if(surface!=null&&surface.isValid()){init(surface,width,height);schedule();}return;
         }if(motion!=null){motion.close();motion=null;}closeFrame();if(cosmic!=null){cosmic.close();cosmic=null;}if(scene!=0)NativeScene.destroy(scene);scene=0;GLES30.glDeleteTextures(1,new int[]{photo},0);photo=0;clearAuxiliary();if(options.cosmic==0)photo=loadPhoto(options.photo,true);createScene(options);schedule();}catch(Exception e){Log.e("AliveClean","Scene reload failed",e);release();}}
     void close(){if(closed)return;closed=true;preferences.unregisterOnSharedPreferenceChangeListener(changes);handler.post(()->{release();thread.quitSafely();});}
-    private void schedule(){if(visible&&(scene!=0||cosmic!=null)&&!framePosted){framePosted=true;choreographer.postFrameCallback(frame);}}
+    private void schedule(){if(visible&&(scene!=0||cosmic!=null||vivo!=null)&&choreographer!=null&&!framePosted){framePosted=true;choreographer.postFrameCallback(frame);}}
     private void onVsync(long time){framePosted=false;frameTime=time;handler.post(renderTask);}
     private void stopFrames(){if(choreographer!=null)choreographer.removeFrameCallback(frame);framePosted=false;handler.removeCallbacks(renderTask);}
     private void createScene(SceneOptions options)throws IOException{
+        if(options.vivo!=null){
+            try{
+                VivoEngineRuntime runtime=VivoEngineRuntime.prepare(context).get(20,java.util.concurrent.TimeUnit.SECONDS);
+                choreographer=Choreographer.getInstance();
+                try(VivoImages images=VivoImages.load(context,runtime,options.vivo)){
+                    vivo=new VivoEngineScene(runtime,options.vivo,width,height,images.photos,images.subject,images.paint,preview,()->handler.post(()->schedule()));
+                }
+                vivo.transition(mode,false,vivoDarkWallpaper?.76f:1f,vivoAodMask);vivo.visible(visible);pacer.reset();return;
+            }catch(Exception e){throw new IOException("Vivo engine initialization failed",e);}
+        }
         cosmicContinuousAod=options.cosmicContinuousAod;cosmicContinuousHome=options.cosmicContinuousHome;
         sailContinuousAod=options.cosmic==0&&options.aod==0&&options.sailContinuousAod;
         if(options.cosmic!=0){
@@ -143,7 +177,7 @@ final class RenderLoop {
         egl=EGL14.eglCreateContext(display,configs[0],EGL14.EGL_NO_CONTEXT,new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION,3,EGL14.EGL_NONE},0);
         window=EGL14.eglCreateWindowSurface(display,configs[0],surface,new int[]{EGL14.EGL_NONE},0);
         if(!EGL14.eglMakeCurrent(display,window,window,egl))throw new IllegalStateException("eglMakeCurrent");
-        EGL14.eglSwapInterval(display,1);if(options.cosmic==0)photo=loadPhoto(options.photo,true);
+        EGL14.eglSwapInterval(display,1);if(options.cosmic==0&&options.vivo==null)photo=loadPhoto(options.photo,true);
         try(InputStream in=context.getAssets().open("shader/photo/aod/lensPhoto/lens_decorator.png")){Bitmap b=BitmapFactory.decodeStream(in);if(b==null)throw new IOException("Invalid decorator");decorator=upload(b);b.recycle();}
         createScene(options);{if(Diagnostics.TRACE)Log.i("AliveClean","GLES3 scene ready "+w+"x"+h);}
     }
@@ -167,7 +201,8 @@ final class RenderLoop {
         return ids[0];
     }
     private void render(long time){
-        if(!visible||(scene==0&&cosmic==null))return;
+        if(!visible||(scene==0&&cosmic==null&&vivo==null))return;
+        if(vivo!=null){try{vivo.draw();if(!EGL14.eglSwapBuffers(display,window))throw new IllegalStateException("Vivo EGL swap failed");if(clockToken!=0)reportClock(false);if(vivo.transitionActive())schedule();}catch(Exception e){Log.e("AliveClean","Vivo frame failed",e);release();}return;}
         if(cosmic!=null){
             try{
                 boolean continuous=preview||(mode==0?cosmicContinuousAod:cosmicContinuousHome);
@@ -210,5 +245,5 @@ final class RenderLoop {
         }catch(Exception e){Log.e("AliveClean","Frame failed",e);release();}
     }
     private void closeFrame(){if(textureMotion!=null){textureMotion.close();textureMotion=null;}if(scene!=0)reportClock(false);frameSample.clear();if(frameMotion!=null){frameMotion.close();frameMotion=null;}if(masks!=null){masks.close();masks=null;}}
-    private void release(){stopFrames();if(cosmic!=null){cosmic.close();cosmic=null;}handler.removeCallbacks(reloadTask);closeFrame();if(motion!=null){motion.close();motion=null;}if(display!=EGL14.EGL_NO_DISPLAY){if(scene!=0){NativeScene.destroy(scene);scene=0;}clearAuxiliary();GLES30.glDeleteTextures(2,new int[]{photo,decorator},0);photo=decorator=0;EGL14.eglMakeCurrent(display,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);if(window!=EGL14.EGL_NO_SURFACE)EGL14.eglDestroySurface(display,window);if(egl!=EGL14.EGL_NO_CONTEXT)EGL14.eglDestroyContext(display,egl);EGL14.eglTerminate(display);EGL14.eglReleaseThread();}display=EGL14.EGL_NO_DISPLAY;egl=EGL14.EGL_NO_CONTEXT;window=EGL14.EGL_NO_SURFACE;}
+    private void release(){stopFrames();if(vivo!=null){vivo.close();vivo=null;}if(cosmic!=null){cosmic.close();cosmic=null;}handler.removeCallbacks(reloadTask);closeFrame();if(motion!=null){motion.close();motion=null;}if(display!=EGL14.EGL_NO_DISPLAY){if(scene!=0){NativeScene.destroy(scene);scene=0;}clearAuxiliary();GLES30.glDeleteTextures(2,new int[]{photo,decorator},0);photo=decorator=0;EGL14.eglMakeCurrent(display,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_SURFACE,EGL14.EGL_NO_CONTEXT);if(window!=EGL14.EGL_NO_SURFACE)EGL14.eglDestroySurface(display,window);if(egl!=EGL14.EGL_NO_CONTEXT)EGL14.eglDestroyContext(display,egl);EGL14.eglTerminate(display);EGL14.eglReleaseThread();}display=EGL14.EGL_NO_DISPLAY;egl=EGL14.EGL_NO_CONTEXT;window=EGL14.EGL_NO_SURFACE;}
 }

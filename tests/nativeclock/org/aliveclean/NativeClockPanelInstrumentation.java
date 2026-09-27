@@ -35,6 +35,7 @@ public final class NativeClockPanelInstrumentation extends Instrumentation {
             if(screen==null)throw new AssertionError("compositor screenshot unavailable");
             try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getFilesDir(),"native-clock-panel.png"))){screen.compress(Bitmap.CompressFormat.PNG,100,out);}
             screen.recycle();
+            verifyMaterialFlow();
             runOnMainSync(()->{try{verify();}catch(Throwable e){failure[0]=e;}});
             if(failure[0]!=null)throw new IllegalStateException(failure[0]);
             waitForIdleSync();
@@ -45,7 +46,7 @@ public final class NativeClockPanelInstrumentation extends Instrumentation {
             if(failure[0]!=null)throw new IllegalStateException(failure[0]);
             runOnMainSync(()->{try{verifyStockExtension();}catch(Throwable e){failure[0]=e;}});
             if(failure[0]!=null)throw new IllegalStateException(failure[0]);
-            result.putString("stream","NATIVE_PANEL_OK original_sheet=true original_card=true native_selection=true native_cancel=true production_editor=true reopen=true stock_panel_extension=true native_host_edit_events=true dex_apply_contract=true\n");
+            result.putString("stream","NATIVE_PANEL_OK original_sheet=true original_card=true native_selection=true native_cancel=true production_editor=true reopen=true stock_panel_extension=true native_host_edit_events=true dex_apply_contract=true four_materials_apply_reload=true delayed_wallpaper=true picker_queue_drained=true\n");
         }catch(Throwable error){failure[0]=error;result.putString("stream",android.util.Log.getStackTraceString(error));}
         finally{runOnMainSync(()->{if(dialog!=null)dialog.dismiss();try{if(host!=null)host.close();}catch(Exception error){android.util.Log.e("ClockPanelTest","release",error);}if(activity!=null)activity.finish();});}
         finish(failure[0]==null?-1:0,result);
@@ -119,6 +120,7 @@ public final class NativeClockPanelInstrumentation extends Instrumentation {
         java.util.List<String> independentIds=new java.util.ArrayList<>();
         independentIds.add(NativeFlymeArtworkPlugin.PERSPECTIVE);
         for(NativeHyperOsStyles.Style style:NativeHyperOsStyles.ALL)independentIds.add(style.id);
+        for(String key:new String[]{"s7-4x4","s8-2x6","s11-2x4"})independentIds.add(NativeVivoClockStyles.PREFIX+key);
         for(String id:independentIds){
             String before=host.read();
             NativeClockEditSession undo=new NativeClockEditSession(host);
@@ -170,11 +172,110 @@ public final class NativeClockPanelInstrumentation extends Instrumentation {
         if(specialStyle.optInt("coloringType")!=1||specialStyle.optInt("openAliveColorEffect")!=5||!special.isSelected()||soft.isSelected())throw new AssertionError("Special effect/native mode isolation failed");
         java.lang.reflect.Field selected=controller.getClass().getSuperclass().getDeclaredField("selectedColorInfo");selected.setAccessible(true);
         if(selected.get(controller)!=null)throw new AssertionError("Two color modes selected together");
+        for(int mode:new int[]{7,8}){
+            View vivo=dialog.getWindow().getDecorView().findViewWithTag(mode==7?"openalive_vivo_clock_glass":"openalive_vivo_clock_blur");
+            if(vivo==null)throw new AssertionError("Vivo material entry missing "+mode);
+            int before=editCount();vivo.performClick();requireEdit(before,"Vivo material "+mode);
+            org.json.JSONObject value=new org.json.JSONObject(new org.json.JSONObject(host.read()).getString("clockStyleConfig"));
+            if(value.optInt("coloringType")!=1||value.optInt("openAliveColorEffect")!=mode||!vivo.isSelected())throw new AssertionError("Vivo material not saved "+value);
+        }
         edits=editCount();reset.performClick();requireEdit(edits,"reset color");
         org.json.JSONObject restored=new org.json.JSONObject(new org.json.JSONObject(host.read()).getString("clockStyleConfig"));
         if(restored.optInt("coloringType")!=2||restored.has("openAliveColorEffect")||restored.has("primaryColorDepthHSL")||soft.isSelected()||special.isSelected())throw new AssertionError("Default color not restored "+restored);
     }
     private int editCount(){return java.util.Collections.frequency(hostEvents,"onStyleDataEdited");}
+    private void mainChecked(Checked work)throws Exception{
+        Throwable[] error={null};runOnMainSync(()->{try{work.run();}catch(Throwable failure){error[0]=failure;}});
+        if(error[0]!=null)throw new IllegalStateException(error[0]);
+    }
+    private interface Checked{void run()throws Exception;}
+    private void settle()throws Exception{
+        java.util.concurrent.CountDownLatch frame=new java.util.concurrent.CountDownLatch(1);
+        runOnMainSync(()->activity.content.postDelayed(frame::countDown,350));
+        if(!frame.await(5,java.util.concurrent.TimeUnit.SECONDS))throw new AssertionError("material frame timeout");
+    }
+    private void verifyMaterialFlow()throws Exception{
+        String[] tags={"openalive_soft_clock_color","openalive_special_clock_color","openalive_vivo_clock_glass","openalive_vivo_clock_blur"};
+        int[] modes={6,5,7,8,6,8,7,5};
+        NativeOriginalClockPlugin original=host.customClock;
+        for(int mode:modes){
+            int edits=editCount();
+            mainChecked(()->{
+                String tag=tags[mode==6?0:mode==5?1:mode==7?2:3];
+                dialog.getWindow().getDecorView().findViewWithTag(tag).performClick();
+                if(host.customClock!=original)throw new AssertionError("color replaced clock provider");
+            });
+            settle();
+            NativeClockHostFixture[] restored={null};
+            try{
+                mainChecked(()->{
+                    requireEdit(edits,"queued material "+mode);
+                    String saved=(String)host.root.getClass().getMethod("getStyleDataForApply").invoke(host.root);
+                    org.json.JSONObject outer=new org.json.JSONObject(saved);
+                    if(NativeOriginalClockPlugin.colorMode(new org.json.JSONObject(outer.getString("clockStyleConfig")))!=mode)
+                        throw new AssertionError("apply lost material "+mode);
+                    if(!host.customClock.materialApplied())throw new AssertionError("preview material absent "+mode);
+                    // A new system host consumes exactly the official apply JSON.
+                    restored[0]=new NativeClockHostFixture(activity,6);
+                    restored[0].write(saved);
+                    activity.content.addView((View)restored[0].root,new android.widget.FrameLayout.LayoutParams(-1,-1));
+                });
+                settle();
+                mainChecked(()->{
+                    Bundle sample=host.customClock.apply("openAliveGetWallpaper",null);
+                    restored[0].call("setWallpaperBitmap",sample);
+                });
+                settle();
+                mainChecked(()->{
+                    if(!restored[0].customClock.materialApplied())throw new AssertionError("fresh lock material absent "+mode);
+                    org.json.JSONObject config=new org.json.JSONObject(new org.json.JSONObject(restored[0].read()).getString("clockStyleConfig"));
+                    if(NativeOriginalClockPlugin.colorMode(config)!=mode)throw new AssertionError("restored effect differs "+config);
+                    // Unrelated native state renders must not put the old color back.
+                    Bundle state=new Bundle();state.putInt("uiState",5);state.putInt("clockSize",1);state.putBoolean("isAnim",false);
+                    restored[0].call("onClockStateChanged",state);
+                    state.putInt("uiState",2);restored[0].call("onClockStateChanged",state);
+                });
+                settle();
+                mainChecked(()->{
+                    if(!restored[0].customClock.materialApplied())throw new AssertionError("scene reset material "+mode);
+                });
+                if(activity.content.isHardwareAccelerated()){
+                    mainChecked(()->dialog.hide());settle();
+                    Bitmap material=captureClock(restored[0].customClock,mode+"-material");
+                    mainChecked(()->NativeClockEditor.editColor((View)restored[0].root,2,null,null));settle();
+                    Bitmap plain=captureClock(restored[0].customClock,mode+"-plain");
+                    int changed=0;
+                    for(int y=0;y<Math.min(material.getHeight(),plain.getHeight());y+=2)
+                        for(int x=0;x<Math.min(material.getWidth(),plain.getWidth());x+=2)
+                            if(material.getPixel(x,y)!=plain.getPixel(x,y))changed++;
+                    material.recycle();plain.recycle();
+                    if(changed<100)throw new AssertionError("material did not change rendered glyphs "+mode+": "+changed);
+                    mainChecked(()->dialog.show());
+                }
+            }finally{
+                mainChecked(()->{if(restored[0]!=null){activity.content.removeView((View)restored[0].root);restored[0].close();}});
+            }
+        }
+        mainChecked(()->{
+            NativeClockEditor.dismissForSwitch(dialog);
+            dialog=NativeClockEditor.show(activity,activity,(View)host.root,()->selections++);
+            if(!dialog.getWindow().getDecorView().findViewWithTag(tags[1]).isSelected())throw new AssertionError("reopen lost custom material");
+            dialog.getWindow().getDecorView().findViewWithTag("openalive_reset_clock_color").performClick();
+            panel=findPanel(dialog.getWindow().getDecorView());selections=0;
+        });
+    }
+    private Bitmap captureClock(NativeOriginalClockPlugin clock,String name)throws Exception{
+        Rect[] area={null};
+        mainChecked(()->{int[] xy=new int[2];clock.clockContainer.getLocationOnScreen(xy);
+            area[0]=new Rect(xy[0],xy[1],xy[0]+clock.clockContainer.getWidth(),xy[1]+clock.clockContainer.getHeight());});
+        Bitmap screen=getUiAutomation().takeScreenshot();
+        if(screen==null)throw new AssertionError("material screenshot unavailable");
+        area[0].intersect(0,0,screen.getWidth(),screen.getHeight());
+        Bitmap crop=Bitmap.createBitmap(screen,area[0].left,area[0].top,area[0].width(),area[0].height());
+        if(crop!=screen)screen.recycle();
+        try(FileOutputStream out=new FileOutputStream(new File(getTargetContext().getFilesDir(),"material-flow-"+name+".png"))){crop.compress(Bitmap.CompressFormat.PNG,100,out);}
+        return crop;
+    }
     private void requireEdit(int previous,String action){
         if(editCount()!=previous+1)throw new AssertionError(action+" did not notify current native host exactly once");
     }

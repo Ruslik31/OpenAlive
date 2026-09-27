@@ -72,7 +72,14 @@ def instrument_foreground(component, timeout=90, hidden_api=False):
 <instrumentation android:name="org.aliveclean.FlymeArtworkInstrumentation" android:targetPackage="org.aliveclean.nativeclocktest"/>
 <instrumentation android:name="org.aliveclean.NativeClockBootInstrumentation" android:targetPackage="org.aliveclean.nativeclocktest"/>
 <instrumentation android:name="org.aliveclean.NativeClockEditBoxInstrumentation" android:targetPackage="org.aliveclean.nativeclocktest"/>
+<instrumentation android:name="org.aliveclean.NativeVivoClocksInstrumentation" android:targetPackage="org.aliveclean.nativeclocktest"/>
+<instrumentation android:name="org.aliveclean.VivoMaterialLayoutsInstrumentation" android:targetPackage="org.aliveclean.nativeclocktest"/>
 </manifest>''', encoding='utf-8')
+if '--material-flow' in sys.argv:
+    manifest=(OUT/'AndroidManifest.xml').read_text(encoding='utf8')
+    manifest=manifest.replace('android:hardwareAccelerated="false"','android:hardwareAccelerated="true"')
+    manifest=manifest.replace('android:targetSdkVersion="35"','android:targetSdkVersion="37"')
+    (OUT/'AndroidManifest.xml').write_text(manifest,encoding='utf8')
 if '--release-host' in sys.argv or '--effects' in sys.argv:
     manifest=(OUT/'AndroidManifest.xml').read_text(encoding='utf8').replace('android:debuggable="true"','android:debuggable="false"')
     manifest=manifest.replace('android:targetSdkVersion="35"','android:targetSdkVersion="37"')
@@ -88,6 +95,9 @@ sources.append(ROOT/'app/java/org/aliveclean/NativeClockLoadState.java')
 sources.append(ROOT/'app/java/org/aliveclean/NativeClockWidgetRecovery.java')
 sources.append(ROOT/'app/java/org/aliveclean/NativeClockSceneTransition.java')
 sources.append(ROOT/'app/java/org/aliveclean/NativeClockMaterial.java')
+sources.append(ROOT/'app/java/org/aliveclean/NativeVivoClockMaterial.java')
+sources.append(ROOT/'app/java/org/aliveclean/VivoGlyphDistanceField.java')
+sources += [ROOT/'app/java/org/aliveclean'/name for name in ('OfficialVivoClockUi.java','NativeVivoClockStyles.java','NativeVivoClockFace.java','NativeVivoClockPlugin.java')]
 sources.append(ROOT/'app/java/org/aliveclean/NativeClockMaterialBootstrap.java')
 sources.append(ROOT/'app/java/miui/util/font/MultiLangHelper.java')
 sources.append(ROOT/'app/java/org/aliveclean/NativeFlymeArtworkPlugin.java')
@@ -107,6 +117,8 @@ with zipfile.ZipFile(OUT/'base.apk') as base, zipfile.ZipFile(OUT/'unsigned.apk'
         dst.write(ROOT/'research/phone-platform/com.oplus.keyguard.personality.clocks/0-KeyguardPersonalityClocks.apk','assets/test-clock-host.apk')
 run(BT/'zipalign.exe','-f',RESOURCE_ALIGNMENT,OUT/'unsigned.apk',OUT/'aligned.apk')
 run(JAVA/'java.exe','-jar',BT/'lib/apksigner.jar','sign','--alignment-preserved','true','--ks',ROOT/'local/development.jks','--ks-pass','pass:android','--ks-key-alias','development','--out',OUT/'test.apk',OUT/'aligned.apk')
+if '--build-only' in sys.argv:
+    sys.exit(0)
 run(*ADB,'install','-r',OUT/'test.apk')
 if '--prepare-only' in sys.argv:
     sys.exit(0)

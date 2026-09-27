@@ -23,7 +23,8 @@ final class ColorOsBridge {
     private static int connectAttempts;
     private static int lastMode=-1;
     private static int lastPhase;
-    private static boolean localAodColor;
+    private static int localWallpaperColor=-1;
+    private static boolean vivoWallpaper;
     private static final SceneState stateOrder=new SceneState();
     private static ColorOsClockTracker clocks;
     private static ColorOsAodClock aodClock;
@@ -205,15 +206,22 @@ final class ColorOsBridge {
         }catch(Throwable error){failure("animation window hooks",error);}
     }
     private static void updateWallpaperColor(ClassLoader cl,boolean aod){
-        if(localAodColor==aod||context==null)return;
+        // Vivo renders one continuous full-screen image across these states. Changing
+        // EngineExtImpl's local-dark flag at wake relayouts its surface immediately:
+        // ColorOS changes alpha from 1 to 0.76 in dark mode, ahead of the animation.
+        // Vivo now interpolates the same night level inside its renderer; keep window
+        // alpha stable to avoid double dimming. Other styles retain their AOD-only
+        // policy. Panel brightness remains entirely system-owned.
+        int local=(aod||vivoWallpaper)?1:0;
+        if(!selected||localWallpaperColor==local||context==null)return;
         try{
             Class<?> dependency=XposedHelpers.findClass("com.android.systemui.DependencyEx",cl);
             Object surfaces=XposedHelpers.callMethod(XposedHelpers.getStaticObjectField(dependency,"sDependency"),"getDependency",XposedHelpers.findClass("com.android.systemui.statusbar.phone.CentralSurfacesImpl",cl));
             android.view.View window=(android.view.View)XposedHelpers.callMethod(surfaces,"getNotificationShadeWindowView");
             if(window==null||window.getWindowToken()==null)return;
             // Verified EngineExtImpl command: x=1 disables the framework's extra night alpha.
-            WallpaperManager.getInstance(context).sendWallpaperCommand(window.getWindowToken(),"wallpaper.support.local.dark.mode",aod?1:0,0,0,null);
-            localAodColor=aod;
+            WallpaperManager.getInstance(context).sendWallpaperCommand(window.getWindowToken(),"wallpaper.support.local.dark.mode",local,0,0,null);
+            localWallpaperColor=local;
         }catch(Throwable error){failure("wallpaper AOD color",error);}
     }
     private static void installPanoramicMask(ClassLoader cl){
@@ -224,9 +232,9 @@ final class ColorOsBridge {
                 @Override protected void beforeHookedMethod(MethodHookParam p){
                     try{
                         if(!selected||!"PANORAMIC".equals(String.valueOf(XposedHelpers.getObjectField(p.args[0],"maskState"))))return;
-                        // The service already renders a black AOD background. Native SystemUI
-                        // otherwise blacks out third-party live wallpapers and fades their surface.
-                        // Keep its animator, power sequence and panel brightness controller intact.
+                        // The service owns its AOD background/reveal. Native SystemUI
+                        // otherwise applies an independent mask and hides the wallpaper.
+                        // Keep the power sequence and panel brightness controller intact.
                         p.args[1]=0f;p.args[4]=false;
                         {if(Diagnostics.TRACE)android.util.Log.i("AliveClean","Panoramic wallpaper mask transparent");}
                     }catch(Throwable error){failure("panoramic mask",error);}
@@ -239,6 +247,15 @@ final class ColorOsBridge {
                 }
             });
         }catch(Throwable error){failure("panoramic mask hook",error);}
+    }
+    private static float nativePanoramicMask(ClassLoader cl){
+        try{
+            Object params=XposedHelpers.getStaticObjectField(XposedHelpers.findClass("com.oplus.systemui.keyguard.anim.OplusKgdAnimParams$PanelPanoramic",cl),"INSTANCE");
+            Object scalar=XposedHelpers.callMethod(params,"getBACKGROUND_MASK_ALPHA_IN_PANORAMIC");
+            float value=((Number)XposedHelpers.callMethod(scalar,"get")).floatValue();
+            if(!Float.isNaN(value)&&value>=0f&&value<1f)return value;
+            throw new IllegalStateException("Invalid native panoramic mask: "+value);
+        }catch(Throwable error){failure("native panoramic wallpaper mask",error);return 0f;}
     }
     private static void installPowerEvents(ClassLoader cl,Class<?> controller){
         try{
@@ -291,7 +308,12 @@ final class ColorOsBridge {
         notificationEffects.configure(reply.getInt("notification_mode",0),reply.getInt("notification_seconds",10),reply.getString("notification_color","blue"),reply.getInt("notification_ring_color",NotificationOptions.RING_BLUE));
         int style=reply.getInt("aod",0);
         boolean continuous=reply.getBoolean("continuous_aod",false);
-        main.post(()->{continuousAodRequested=continuous;updateContinuousAod();aodClock.configure(context,selected,style);if(aodClock.usesIndependentClock())clocks.scene(context,false,-1,"");});
+        boolean vivo=reply.getBoolean("vivo_wallpaper",false);
+        main.post(()->{
+            vivoWallpaper=vivo;
+            if(lastMode>=0||vivoWallpaper)updateWallpaperColor(clocks.loader(),lastMode==0);
+            continuousAodRequested=continuous;updateContinuousAod();aodClock.configure(context,selected,style);if(aodClock.usesIndependentClock())clocks.scene(context,false,-1,"");
+        });
     }
     private static void readConfiguration(){
         try{
@@ -314,7 +336,7 @@ final class ColorOsBridge {
             selected=info!=null&&"org.aliveclean".equals(info.getPackageName());
             {if(Diagnostics.TRACE)XposedBridge.log("AliveClean: lock wallpaper selected="+selected);}
             if(selected){connect();readConfiguration();}
-            else main.post(()->{notificationEffects.configure(0,10,"blue");updateContinuousAod();aodClock.configure(context,false,0);clocks.scene(context,false,-1,"");stateOrder.disconnect();lastMode=-1;lastPhase=0;synchronized(ColorOsBridge.class){connectAttempts=0;}});
+            else main.post(()->{localWallpaperColor=-1;vivoWallpaper=false;notificationEffects.configure(0,10,"blue");updateContinuousAod();aodClock.configure(context,false,0);clocks.scene(context,false,-1,"");stateOrder.disconnect();lastMode=-1;lastPhase=0;synchronized(ColorOsBridge.class){connectAttempts=0;}});
         }catch(Throwable error){selected=false;main.post(()->{continuousAodRequested=false;updateContinuousAod();aodClock.configure(context,false,0);});failure("wallpaper selection",error);}
     });}
     private static synchronized void connect(){
@@ -330,7 +352,13 @@ final class ColorOsBridge {
                 synchronized(ColorOsBridge.class){connectAttempts=0;}
                 configure(reply);
                 {if(Diagnostics.TRACE)XposedBridge.log("AliveClean: scene channel connected; clock_api="+(clockApi?4:0));}
-                main.post(()->{if(lastMode>=0){Bundle b=new Bundle();b.putInt("mode",lastMode);b.putBoolean("animate",false);b.putInt("phase",lastPhase);b.putLong("time",SystemClock.uptimeMillis());b.putLong("clock_wake",aodClock.wakeToken());send(1,b);}});
+                main.post(()->{
+                    // A recreated engine starts with its framework defaults, regardless
+                    // of the flag last sent to the previous renderer process.
+                    localWallpaperColor=-1;
+                    if(lastMode>=0||vivoWallpaper)updateWallpaperColor(clocks.loader(),lastMode==0);
+                    if(lastMode>=0){Bundle b=new Bundle();b.putInt("mode",lastMode);b.putBoolean("animate",false);b.putInt("phase",lastPhase);b.putLong("time",SystemClock.uptimeMillis());b.putLong("clock_wake",aodClock.wakeToken());send(1,b);}
+                });
             }catch(Throwable error){
                 failure("scene channel",error);
                 if(selected){
@@ -343,6 +371,15 @@ final class ColorOsBridge {
         });
     }
     static void send(int what,Bundle data){
+        if(what==1&&vivoWallpaper&&context!=null){
+            // Snapshot before delivering the wake event. The renderer applies this
+            // target and its scene atomically, not after ACTION_SCREEN_ON.
+            boolean night=(context.getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            try{night=night&&android.provider.Settings.Secure.getInt(context.getContentResolver(),"oplus_customize_settings_dark_wallpaper",0)==1;}
+            catch(RuntimeException error){failure("wallpaper dim setting",error);night=false;}
+            data.putFloat("vivo_night_level",night?.76f:1f);
+            data.putFloat("vivo_aod_mask",nativePanoramicMask(clocks.loader()));
+        }
         Messenger target=channel;
         if(target!=null)try{Message message=Message.obtain();message.what=what;message.setData(data);target.send(message);return;}
         catch(RemoteException error){channel=null;main.post(ColorOsBridge::updateContinuousAod);}

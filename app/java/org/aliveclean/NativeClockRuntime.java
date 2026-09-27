@@ -29,6 +29,15 @@ final class NativeClockRuntime {
                 "0ddef90648998900175cfdca9a6f087a2544c182f130b0ad4f7e94a03a115e79",
                 "original-clock-hyperos",".ttf");
     }
+    static synchronized File vivoLayouts(Context host)throws Exception{
+        String digest;
+        try(InputStream in=host.getAssets().open("native-clock/vivo/layouts.sha256")){
+            ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[128];int n;
+            while((n=in.read(b))!=-1){out.write(b,0,n);if(out.size()>128)throw new IOException("Invalid Vivo layout digest");}
+            digest=out.toString("US-ASCII").trim();
+        }
+        return unpackFile(host,"native-clock/vivo/layouts.apk",digest,"original-clock-vivo",".apk");
+    }
     private static File unpackFile(Context host,String asset,String digest,String directory,String suffix)throws Exception{
         if(!digest.matches("[a-f0-9]{64}"))throw new IOException("Invalid clock runtime digest");
         File folder=new File(host.getCodeCacheDir(),directory);

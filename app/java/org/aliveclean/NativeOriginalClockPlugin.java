@@ -42,6 +42,9 @@ class NativeOriginalClockPlugin implements IntFunction<View>, BiFunction<String,
     private int coloringType;
     private org.json.JSONArray colorDepth;
     private Bundle wallpaperInfo=new Bundle();
+    private long materialMinute=Long.MIN_VALUE;
+    private String materialZone="";
+    private boolean material24Hour;
 
     NativeOriginalClockPlugin(Context context,String id,NativeClockFaces faces,boolean vertical) throws Exception {
         this.id=id;this.faces=faces;this.vertical=vertical;
@@ -88,6 +91,29 @@ class NativeOriginalClockPlugin implements IntFunction<View>, BiFunction<String,
         if (released) return null;
         Bundle out = new Bundle();
         switch (command) {
+            case "openAliveEditColor":
+                // Like ColoringTypeChanged in the stock provider: edit the live
+                // provider first, then let its container synchronize the draft.
+                // Replacing the outer style here can compare equal at native
+                // coloringType=1, which all four extended materials share.
+                if(args==null||args.getInt("mode",0)<1||args.getInt("mode",0)>8)return null;
+                coloringType=args.getInt("mode");
+                color=args.getInt("color",color);
+                colorDepth=null;
+                float[] depth=args.getFloatArray("depth");
+                if(depth!=null&&depth.length==3){
+                    colorDepth=new org.json.JSONArray();
+                    try{for(float component:depth)colorDepth.put(component);}
+                    catch(org.json.JSONException invalid){colorDepth=null;}
+                }
+                glass=coloringType==1||coloringType>=5;
+                updateColor();requestWallpaper();
+                if(callback!=null){
+                    Bundle edited=new Bundle();edited.putInt("commandDestination",1);
+                    callback.apply("renderFinish",new Bundle(edited));
+                    callback.apply("onStyleDataEdited",edited);
+                }
+                return apply("getStyleData",null);
             case "setStyleData":
                 if (args == null || !args.containsKey("styleData")) return null;
                 try {
@@ -122,6 +148,11 @@ class NativeOriginalClockPlugin implements IntFunction<View>, BiFunction<String,
                     long time=args.getLong("time",System.currentTimeMillis());
                     boolean format=android.text.format.DateFormat.is24HourFormat(root.getContext());
                     faces.update(time,TimeZone.getDefault(),format);
+                    String zone=TimeZone.getDefault().getID();
+                    if(materialMinute!=time/60000L||material24Hour!=format||!materialZone.equals(zone)){
+                        materialMinute=time/60000L;material24Hour=format;materialZone=zone;
+                        material.glyphChanged();
+                    }
                 }
                 return null;
             case "onClockStateChanged":
@@ -253,8 +284,8 @@ class NativeOriginalClockPlugin implements IntFunction<View>, BiFunction<String,
     static int colorMode(JSONObject config){
         int nativeMode=config.optInt("coloringType",0);
         int effect=config.optInt("openAliveColorEffect",0);
-        int mode=nativeMode==1&&effect>=5&&effect<=6?effect:nativeMode;
-        return mode>=0&&mode<=6?mode:0;
+        int mode=nativeMode==1&&effect>=5&&effect<=8?effect:nativeMode;
+        return mode>=0&&mode<=8?mode:0;
     }
     static void writeColorMode(JSONObject config,int mode)throws org.json.JSONException{
         // SystemUI also parses coloringType for widgets and affordances. Never

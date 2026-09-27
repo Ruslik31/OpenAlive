@@ -34,11 +34,12 @@ final class NativeClockProvider implements Function<String,Object> {
         };
     }
     static boolean contains(String id){
-        return NativeFlymeClockPlugin.ID.equals(id)||NativeFlymeClockPlugin.HORIZONTAL_ID.equals(id)||NativeFlymeArtworkPlugin.contains(id)||NativeHyperOsClockPlugin.contains(id);
+        return NativeFlymeClockPlugin.ID.equals(id)||NativeFlymeClockPlugin.HORIZONTAL_ID.equals(id)||NativeFlymeArtworkPlugin.contains(id)||NativeHyperOsClockPlugin.contains(id)||NativeVivoClockStyles.contains(id);
     }
     @Override public Object apply(String id){
         if(!contains(id))return original==null?null:original.apply(id);
         try{
+            if(NativeVivoClockStyles.contains(id))return new NativeVivoClockPlugin(context,id);
             if(NativeHyperOsClockPlugin.contains(id))return new NativeHyperOsClockPlugin(context,id);
             if(NativeFlymeArtworkPlugin.contains(id))return new NativeFlymeArtworkPlugin(context,id);
             return new NativeFlymeClockPlugin(context,id);

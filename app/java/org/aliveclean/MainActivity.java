@@ -28,6 +28,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
         if(draft.getInt("aod",0)<0)draft.edit().putInt("aod",0).apply();
         if(state==null){
             mode=Math.max(0,Math.min(2,getIntent().getIntExtra("scene",1)));
+            draft.edit().remove("vivo").apply();
             int variant=getIntent().getIntExtra("cosmic_variant",0);
             if(variant==1||variant==3||variant==4||(variant>=6&&variant<=15)||(variant>=101&&variant<=105)||(variant>=201&&variant<=205))draft.edit().putInt("cosmic",variant).apply();
             else if(getIntent().getBooleanExtra("photo_editor",false))draft.edit().putInt("cosmic",0).apply();
@@ -106,6 +107,15 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     @Override protected void onActivityResult(int request,int result,Intent data) {
         super.onActivityResult(request,result,data);
         if(request==30){showScene();return;}
+        if(request==31){
+            if(result==RESULT_OK&&data!=null){String name=data.getStringExtra("photo");
+                if(name!=null&&name.matches("crop-[A-Za-z0-9._-]+")&&new File(getFilesDir(),name).isFile()){
+                    SharedPreferences.Editor edit=draft.edit().putInt("cosmic",0).putString(importTarget==1?"home_photo":"photo",name);
+                    if(importTarget==1)edit.putBoolean("home_follow_lock",false);edit.apply();
+                }
+            }
+            showScene();return;
+        }
         if(request==20&&awaitingApply){
             awaitingApply=false;
             WallpaperManager manager=WallpaperManager.getInstance(this);
@@ -121,7 +131,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
         android.net.Uri returned=data.getData();
         if(returned==null&&data.getClipData()!=null&&data.getClipData().getItemCount()==1)returned=data.getClipData().getItemAt(0).getUri();
         if(returned==null){toast("照片来源没有返回可读取的图片");return;}
-        final android.net.Uri uri=returned;importImage(()->getContentResolver().openInputStream(uri));
+        final android.net.Uri uri=returned;importImage(()->getContentResolver().openInputStream(uri),true);
     }
 
     interface ImageInput { InputStream open() throws IOException; }
@@ -145,6 +155,9 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
         },"AliveApply").start();
     }
     private void importImage(ImageInput source) {
+        importImage(source,false);
+    }
+    private void importImage(ImageInput source,boolean cropPhoto) {
         if(importing)return;
         final int target=importTarget;
         importBusy(true);
@@ -169,6 +182,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
                     if(isFinishing()||isDestroyed()){completed.delete();return;}
                     // Immutable image + one preference transaction keeps the active wallpaper intact.
                     if(target==2){importBusy(false);openFrameCrop(completed.getName(),true);return;}
+                    if(cropPhoto){importBusy(false);startActivityForResult(new Intent(this,PhotoCropActivity.class).putExtra("photo",completed.getName()),31);return;}
                     SharedPreferences.Editor edit=draft.edit().putInt("cosmic",0).putString(target==1?"home_photo":"photo",completed.getName());
                     if(target==1)edit.putBoolean("home_follow_lock",false);
                     edit.apply();importBusy(false);showScene();
