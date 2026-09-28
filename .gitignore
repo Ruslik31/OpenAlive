@@ -41,4 +41,6 @@ __pycache__/
 !/tools/check_native_clock_fonts.py
 !/tools/import_alive_clock_templates.py
 !/tools/import_native_clock_previews.py
+!/tools/import_xiaomi_ui.py
+!/tools/check_xiaomi_assets.py
 !/tools/ui-api/

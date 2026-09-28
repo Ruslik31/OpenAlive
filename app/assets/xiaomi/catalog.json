@@ -1,0 +1,86 @@
+[
+  {
+    "id": "moon",
+    "title": "月球",
+    "sha256": "88bac3b5240543f9a98b3e4d68e625c3449871bbf221b54910c28393197538ed",
+    "bytes": 85520742,
+    "lands": 5,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  },
+  {
+    "id": "snowmountain",
+    "title": "雪山",
+    "sha256": "04d04e3056bad5d3798262775a00ba4c793fdc195b4008541e06a953cb723307",
+    "bytes": 66952132,
+    "lands": 1,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  },
+  {
+    "id": "geometry",
+    "title": "几何",
+    "sha256": "ff673f22f82b32de790dfc4eb24fac3de5da355b214ddf016ea6cb4fa81cab47",
+    "bytes": 35228502,
+    "lands": 1,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  },
+  {
+    "id": "saturn",
+    "title": "土星环",
+    "sha256": "e1da57d3034d9c0cb05c9177397a172b2a118b8e4cf10f5575f9f988274f523c",
+    "bytes": 32148228,
+    "lands": 1,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  },
+  {
+    "id": "earth",
+    "title": "地球家园",
+    "sha256": "b1480694130ffc4d8132e9dcb2d04ac3220d7762bae150784de5314469ae7df1",
+    "bytes": 92249418,
+    "lands": 5,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  },
+  {
+    "id": "mars",
+    "title": "红色火星",
+    "sha256": "378dee83bcb7ecf6647f5761902dffa64b37ae40f44d74dea0200cca2e184a2e",
+    "bytes": 122589087,
+    "lands": 5,
+    "clock": {
+      "clock_position_x": 0.34,
+      "clock_position_y": 0.12,
+      "dual_clock_position_x_anchor_right": 0.65,
+      "dual_clock_position_y": 0.6,
+      "support_change_with_time": 0
+    }
+  }
+]

@@ -13,31 +13,79 @@ import java.io.File;
 final class OfficialHyperOsUi extends ContextWrapper {
     private static ClassLoader sharedLoader;
     private static String sharedPath;
+    private static Class<?> fontBridge;
+    private static Class<?> looperBridge;
+    private static ClassLoader platformBridge;
     private final Resources resources;
     private final Resources.Theme theme;
     private final ClassLoader loader;
     private android.graphics.Typeface neumatic;
     private LayoutInflater inflater;
 
-    OfficialHyperOsUi(Context host,File protectedApk)throws Exception{
+    OfficialHyperOsUi(Context host,File protectedApk)throws Exception{this(host,protectedApk,false);}
+    private OfficialHyperOsUi(Context host,File protectedApk,boolean superWallpaper)throws Exception{
         super(host);
-        miui.util.font.MultiLangHelper.configure(NativeClockRuntime.globalFont(host).getPath());
+        fontBridge(host).getMethod("configure",String.class).invoke(null,NativeClockRuntime.globalFont(host).getPath());
         loader=loader(host,protectedApk);
         ApplicationInfo info=new ApplicationInfo();info.packageName="com.miui.aod";info.uid=android.os.Process.myUid();
         info.sourceDir=protectedApk.getPath();info.publicSourceDir=protectedApk.getPath();info.targetSdkVersion=35;
-        resources=host.getPackageManager().getResourcesForApplication(info);
+        Resources source=host.getPackageManager().getResourcesForApplication(info);
+        // The real Xiaomi AOD plugin applies MIUIX auto-density before it
+        // inflates clocks. Keep that adjustment private to this AOD context.
+        if(superWallpaper){
+            android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();metrics.setTo(source.getDisplayMetrics());
+            android.content.res.Configuration configuration=new android.content.res.Configuration(source.getConfiguration());
+            int dpi=XiaomiAodDensity.resolve(host,loader);
+            metrics.densityDpi=dpi;metrics.density=dpi/160f;metrics.scaledDensity=metrics.density*configuration.fontScale;
+            configuration.densityDpi=dpi;
+            // MIUIX keeps the window's dp qualifiers when changing density.
+            // Recomputing sw/w/h here would choose a different clock layout.
+            resources=new Resources(source.getAssets(),metrics,configuration);
+        }else resources=source;
         theme=resources.newTheme();theme.applyStyle(android.R.style.Theme_Material_NoActionBar,true);
         loadOriginalSystemFonts(host.getAssets());
     }
-    private static synchronized ClassLoader loader(Context host,File apk){
+    private static synchronized Class<?> fontBridge(Context host)throws Exception{
+        if(fontBridge==null){
+            // In SystemUI the host belongs to SystemUI, while these adapters
+            // belong to the module. Keep the existing module-loader path on
+            // ColorOS; never try to find our font bridge in the host APK.
+            ClassLoader module=OfficialHyperOsUi.class.getClassLoader();
+            try{
+                Class<?> candidate=module.loadClass("miui.util.font.MultiLangHelper");
+                candidate.getMethod("configure",String.class);
+                fontBridge=candidate;
+                looperBridge=module.loadClass("com.miui.aod.utils.LooperUtils");
+                platformBridge=module;
+                return fontBridge;
+            }catch(ClassNotFoundException|NoSuchMethodException nativeMiuiClass){}
+            // A HyperOS boot class of the same name may exist but return null
+            // until MIUI's own application initialization. Resolve only this
+            // small adapter from our APK, leaving all other types with Android.
+            String moduleApk=host.getPackageManager().getApplicationInfo("org.aliveclean",0).sourceDir;
+            ClassLoader bridge=new DexClassLoader(moduleApk,host.getCodeCacheDir().getPath(),null,Context.class.getClassLoader()){
+                @Override protected Class<?> loadClass(String name,boolean resolve)throws ClassNotFoundException{
+                    if(name.equals("miui.util.font.MultiLangHelper")||name.equals("com.miui.aod.utils.LooperUtils")){Class<?> c=findLoadedClass(name);return c==null?findClass(name):c;}return super.loadClass(name,resolve);
+                }
+            };
+            fontBridge=bridge.loadClass("miui.util.font.MultiLangHelper");
+            looperBridge=bridge.loadClass("com.miui.aod.utils.LooperUtils");
+            platformBridge=bridge;
+        }return fontBridge;
+    }
+    private static synchronized ClassLoader loader(Context host,File apk)throws Exception{
         String path=apk.getAbsolutePath();
         if(sharedLoader==null||!path.equals(sharedPath)){
             // Share only the missing font-file service with this isolated APK.
             // All other dependencies still resolve against the Android framework.
             ClassLoader dependencies=new ClassLoader(Context.class.getClassLoader()){
                 @Override protected Class<?> loadClass(String name,boolean resolve)throws ClassNotFoundException{
-                    if(name.equals("miui.util.font.MultiLangHelper"))return miui.util.font.MultiLangHelper.class;
-                    return super.loadClass(name,resolve);
+                    if(name.equals("miui.util.font.MultiLangHelper"))return fontBridge;
+                    if(name.equals("com.miui.aod.utils.LooperUtils"))return looperBridge;
+                    try{return super.loadClass(name,resolve);}catch(ClassNotFoundException missing){
+                        if(name.equals("miui.util.FeatureParser")||name.equals("miui.os.Build"))return platformBridge.loadClass(name);
+                        throw missing;
+                    }
                 }
             };
             sharedLoader=new DexClassLoader(path,host.getCodeCacheDir().getPath(),null,dependencies);
@@ -47,6 +95,9 @@ final class OfficialHyperOsUi extends ContextWrapper {
     }
     static OfficialHyperOsUi open(Context host)throws Exception{
         return new OfficialHyperOsUi(host,NativeClockRuntime.unpack(host,"hyperos"));
+    }
+    static OfficialHyperOsUi openSuperWallpaper(Context host)throws Exception{
+        return new OfficialHyperOsUi(host,NativeClockRuntime.unpack(host,"hyperos"),true);
     }
     @SuppressWarnings("unchecked")
     private void loadOriginalSystemFonts(AssetManager moduleAssets)throws Exception{

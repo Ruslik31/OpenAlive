@@ -10,7 +10,7 @@ import android.widget.*;
 import java.util.*;
 
 /** AOD-only content. Time advances independently of wallpaper drawing. */
-final class AodClockView extends FrameLayout {
+final class AodClockView extends AodClockFace {
     private final LinearLayout content;
     private final TextView time,date,lunar;
     private final ClockUpdates updates;

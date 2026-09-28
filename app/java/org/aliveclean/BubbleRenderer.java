@@ -55,7 +55,13 @@ final class BubbleRenderer implements WallpaperRenderer {
     public void render(){
         float[] v=motion.values;float t=106+motion.time;
         GLES30.glViewport(0,0,width,height);GLES30.glDisable(GLES30.GL_SCISSOR_TEST);GLES30.glDisable(GLES30.GL_DEPTH_TEST);GLES30.glDisable(GLES30.GL_CULL_FACE);GLES30.glDisable(GLES30.GL_BLEND);
+        GLES30.glColorMask(true,true,true,true);
         GLES30.glClearColor(0,0,0,1);GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT|GLES30.GL_DEPTH_BUFFER_BIT);
+        // Bubble transparency blends into our own opaque background. Do not
+        // export the intermediate alpha (a*a + dstA*(1-a)) to ColorOS: its
+        // launcher snapshot/blur composition can expose a pale layer below.
+        // Keep the original RGB blend and animation unchanged.
+        GLES30.glColorMask(true,true,true,false);
         background.use();background.matrix("u_projTrans",bgProjection);
         float rotation=(float)(25*.5*(Math.cos(t*.025*2*Math.PI)+1)*Math.signum(Math.cos(t*.025*Math.PI)));
         Matrix.setRotateM(transform,0,rotation,0,0,1);Matrix.scaleM(transform,0,3.5f,4.9f,1);background.matrix("u_transform",transform);
@@ -73,6 +79,7 @@ final class BubbleRenderer implements WallpaperRenderer {
             GLES30.glDrawElements(GLES30.GL_TRIANGLES,sphereCount,GLES30.GL_UNSIGNED_SHORT,0);
         }
         GLES30.glBindVertexArray(0);GLES30.glDisable(GLES30.GL_CULL_FACE);GLES30.glDisable(GLES30.GL_BLEND);
+        GLES30.glColorMask(true,true,true,true);
     }
     public void close(){if(bubble!=null){bubble.close();bubble=null;}if(background!=null){background.close();background=null;}GLES30.glDeleteBuffers(4,buffers,0);GLES30.glDeleteVertexArrays(2,arrays,0);}
 }

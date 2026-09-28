@@ -26,3 +26,4 @@ Xposed API 82 仅用于编译，不打进 APK；运行时由 LSPosed 提供。
 
 - `app/assets/vivo/runtime/`：Vivo LiveWallpaperBox 7.0.1.02 原始程序及已下载的闪卡、光栅纹理。通过独立类加载器复用原版渲染代码，APK 与纹理内容未修改；仅重映射离线纹理路径。来源和 SHA-256 见同目录 `source.json`。这部分保留原权利人的权利，不属于本项目 MIT 授权范围。
 - `app/res/drawable/vivo_*`：Vivo BBKTheme 原始编辑器图标，来源及校验值见 `app/assets/vivo/ui-source.json`。光栅选项的原始 PAG 动画及配套 `libpag`、`libffavc` 保存在上述 Vivo 运行库中，保留其各自版权与许可。
+- `app/assets/xiaomi/ui.apk`：小米 ThemeManager 的原始列表、预览、进度条和落地点控件。DEX、资源和素材内容不变，只去掉未调用的视频编辑原生库及原 APK 签名元数据并重新压缩；原包与逐文件校验值见 `vendor/xiaomi/ui-manifest.json`。六款横幅来自各自原版场景 APK。场景 APK 不内置，按 `app/assets/xiaomi/catalog.json` 的 SHA-256 校验后从已安装原包或用户选定的离线文件加载。小米程序、素材及其依赖库保留原有权利，不属于本项目 MIT 授权范围。

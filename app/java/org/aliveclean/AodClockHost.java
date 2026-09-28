@@ -10,8 +10,18 @@ import java.util.*;
 final class AodClockHost {
     private ViewGroup root;
     private View scope,time,date;
-    private AodClockView clock;
-    private ValueAnimator fade,stockFade;
+    private AodClockFace clock;
+    private android.os.Bundle xiaomiClock;
+    void configure(android.os.Bundle metadata){
+        String next=metadata==null?null:metadata.getString("family");
+        String previous=xiaomiClock==null?null:xiaomiClock.getString("family");
+        if(!Objects.equals(next,previous))hide();
+        xiaomiClock=metadata==null?null:new android.os.Bundle(metadata);
+    }
+    private ValueAnimator fade,stockFade,enterFade;
+    private float windowAlpha=1,enterAlpha=1;
+    private float reversedEnterAlpha=-1;
+    private boolean enterPending,xiaomiTransitions;
     private int generation;
     private boolean owning,holdingClock,holdingUnlock;
     private float stockAlpha;
@@ -60,18 +70,25 @@ final class AodClockHost {
         attach(parent,content,null,clockScope);
     }
     private void attach(ViewGroup parent,View t,View d,View clockScope){
+        boolean reversing=xiaomiClock!=null&&root==parent&&scope==clockScope&&!owning&&fade!=null;
+        float previousFace=reversing&&clock!=null&&windowAlpha>0?Math.min(1,clock.getAlpha()/windowAlpha):0;
         if(root==parent&&scope==clockScope&&clock!=null){
-            cancelFade();cancelStockFade();holdingClock=false;holdingUnlock=false;stockAlpha=0;owning=true;time=t;date=d;maskContents();return;
+            if(xiaomiClock!=null&&owning){time=t;date=d;maskContents();return;}
+            cancelFade();cancelStockFade();holdingClock=false;holdingUnlock=false;
+            reversedEnterAlpha=reversing?previousFace:-1;stockAlpha=0;
+            owning=true;time=t;date=d;maskContents();return;
         }
         hide();
-        AodClockView next=new AodClockView(parent.getContext(),false);
+        AodClockFace next=xiaomiClock==null?new AodClockView(parent.getContext(),false):new XiaomiAodClockView(parent.getContext(),xiaomiClock);
         try{
             parent.addView(next,new ViewGroup.LayoutParams(-1,-1));
             next.active(true);next.refresh(System.currentTimeMillis());
-            root=parent;clock=next;time=t;date=d;scope=clockScope;owning=true;stockAlpha=0;
+            root=parent;clock=next;time=t;date=d;scope=clockScope;owning=true;
+            reversedEnterAlpha=reversing?previousFace:-1;stockAlpha=0;
+            if(next instanceof XiaomiAodClockView)((XiaomiAodClockView)next).whenFailed(()->{if(clock==next)hide();});
             maskContents();
             parent.getViewTreeObserver().addOnPreDrawListener(predraw);parent.addOnAttachStateChangeListener(attachment);
-        }catch(RuntimeException error){next.active(false);if(next.getParent()==parent)parent.removeView(next);hide();throw error;}
+        }catch(RuntimeException|LinkageError error){next.active(false);if(next.getParent()==parent)parent.removeView(next);hide();throw error;}
     }
     private void discover(View view){
         if("org.aliveclean.native_clock_content".equals(view.getTag())){target(view);return;}
@@ -125,7 +142,43 @@ final class AodClockHost {
         }
     }
     void tick(long time){if(clock!=null)clock.tick(time);}
-    void contentAlpha(float value){if(clock!=null){clock.setAlpha(Math.max(0,Math.min(1,value)));clock.active(value>0);}}
+    void contentAlpha(float value){
+        windowAlpha=Math.max(0,Math.min(1,value));
+        if(xiaomiClock!=null&&owning&&xiaomiTransitions){
+            if(windowAlpha==0){cancelEnterFade();enterAlpha=0;enterPending=true;}
+            else startEnterFade();
+            faceAlpha(windowAlpha*enterAlpha);
+        }else faceAlpha(windowAlpha);
+    }
+    private void faceAlpha(float value){if(clock!=null){clock.setAlpha(value);clock.active(value>0);}}
+    // HyperOS DozeHost.startEnterAnim: 1000 ms, AccelerateInterpolator, no
+    // super-wallpaper style delay. ColorOS still owns the visible AOD window.
+    void enterXiaomi(boolean animate){
+        if(xiaomiClock==null||clock==null||!owning)return;
+        cancelEnterFade();cancelStockFade();xiaomiTransitions=animate;
+        boolean reversing=reversedEnterAlpha>=0;
+        enterAlpha=animate?(reversing?reversedEnterAlpha:0):1;enterPending=animate;
+        reversedEnterAlpha=-1;
+        faceAlpha(windowAlpha*enterAlpha);
+        // contentAlpha follows this call with the current native mask value.
+    }
+    private void startEnterFade(){
+        if(!enterPending||enterFade!=null||clock==null)return;
+        enterPending=false;
+        ValueAnimator animation=ValueAnimator.ofFloat(enterAlpha,1);enterFade=animation;
+        animation.setDuration(1000);animation.setInterpolator(new android.view.animation.AccelerateInterpolator());
+        animation.addUpdateListener(a->{if(enterFade==a&&owning){enterAlpha=(float)a.getAnimatedValue();faceAlpha(windowAlpha*enterAlpha);}});
+        animation.addListener(new AnimatorListenerAdapter(){@Override public void onAnimationEnd(Animator a){if(enterFade==a)enterFade=null;}});
+        animation.start();
+    }
+    void leaveXiaomi(){
+        if(xiaomiClock==null){leave();return;}
+        if(!owning)return; // Reconciliation/ticks must not restart the transition.
+        // Release the stock clock immediately to ColorOS, as before. Only the
+        // separate AOD face fades; no extra native-clock alpha/material animation.
+        leave(false);
+    }
+    private void cancelEnterFade(){enterPending=false;if(enterFade!=null){ValueAnimator old=enterFade;enterFade=null;old.cancel();}}
     private int clockBottom(){return !owning||clock==null||clock.getHeight()==0?0:clock.notificationTop();}
     int notificationTop(){
         int floor=clockBottom();
@@ -159,22 +212,23 @@ final class AodClockHost {
         releaseClock();if(clock==null)hide();
     }
     void leave(boolean waitForFrame){
+        cancelEnterFade();
         if(waitForFrame&&owning){owning=false;holdingClock=true;releaseNotificationSpace();}
         else if(!waitForFrame)releaseClock();
         if(clock==null){if(!holdingClock)hide();return;}
         if(fade!=null)return;
         if(clock.getAlpha()==0){removeFace();if(!holdingClock)hide();return;}
         final int token=++generation;
-        fade=ValueAnimator.ofFloat(clock.getAlpha(),0);fade.setDuration(180);
-        fade.setInterpolator(new PathInterpolator(.33f,0,.67f,1));
-        fade.addUpdateListener(a->{if(token==generation)contentAlpha((float)a.getAnimatedValue());});
+        fade=ValueAnimator.ofFloat(clock.getAlpha(),0);fade.setDuration(xiaomiClock==null?180:500);
+        if(xiaomiClock==null)fade.setInterpolator(new PathInterpolator(.33f,0,.67f,1));
+        fade.addUpdateListener(a->{if(token==generation)faceAlpha((float)a.getAnimatedValue());});
         fade.addListener(new AnimatorListenerAdapter(){@Override public void onAnimationEnd(Animator a){if(token==generation){fade=null;removeFace();if(!holdingClock)hide();}}});
         fade.start();
     }
     // Only a successfully submitted expanded wallpaper frame releases this gate.
     // No delay/timeout guesses at the duration of the photo animation.
     void frameReady(){
-        if(!holdingClock||holdingUnlock||stockFade!=null)return;
+        if(xiaomiClock!=null||!holdingClock||holdingUnlock||stockFade!=null)return;
         ValueAnimator animation=ValueAnimator.ofFloat(stockAlpha,1);stockFade=animation;
         animation.setDuration(167);animation.setInterpolator(new PathInterpolator(.33f,0,.67f,1));
         animation.addUpdateListener(a->{if(stockFade==a&&holdingClock){stockAlpha=(float)a.getAnimatedValue();maskContents();}});
@@ -195,6 +249,7 @@ final class AodClockHost {
     }
     private void removeFace(){if(clock!=null){clock.active(false);if(clock.getParent() instanceof ViewGroup)((ViewGroup)clock.getParent()).removeView(clock);clock=null;}}
     void hide(){
+        cancelEnterFade();windowAlpha=enterAlpha=1;reversedEnterAlpha=-1;xiaomiTransitions=false;
         widgets.clear();notifications.clear();
         cancelFade();ViewGroup previous=root;root=null;scope=time=date=null;notificationStack=null;
         if(previous!=null){if(previous.getViewTreeObserver().isAlive())previous.getViewTreeObserver().removeOnPreDrawListener(predraw);previous.removeOnAttachStateChangeListener(attachment);}

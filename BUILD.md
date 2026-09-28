@@ -1,6 +1,6 @@
 # 编译
 
-GitHub Actions 会在推送 `v*` 标签时编译、验证 APK，再发布 Release。手动运行工作流只生成构建产物。
+GitHub Actions 会在推送 `v*` 标签时编译、验证 APK，再发布 Release。手动运行默认只生成构建产物；勾选 `release` 时同时发布。
 
 ## 环境
 
@@ -21,3 +21,5 @@ python3 tools/build_release.py
 未配置签名时会创建本地开发密钥。正式构建使用 `OPENALIVE_KEYSTORE`、`OPENALIVE_STORE_PASSWORD`、`OPENALIVE_KEY_ALIAS`（默认 `development`）；密钥不会进入仓库。GitHub 工作流通过仓库 Secrets 注入同一把密钥，方便覆盖安装。
 
 资源表以未压缩形式存储并按 4096 字节对齐，签名后再次检查。安装包暂不包含视频壁纸。
+
+小米超级壁纸的列表和预览使用 `app/assets/xiaomi/ui.apk` 中的原版控件，构建会校验所有保留文件。需要重新导入时执行 `python tools/import_xiaomi_ui.py ThemeManager.apk 场景APK目录`，输入版本固定并校验原包；目录内应有 `moon.apk`、`snowmountain.apk`、`geometry.apk`、`saturn.apk`、`earth.apk` 和 `mars.apk`。六个场景包不打进 OpenAlive，运行时复用已安装的匹配原包，也可在列表里选择本地 APK 导入，导入后无需安装原应用或联网。

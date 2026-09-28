@@ -22,6 +22,12 @@ public final class SceneProvider extends ContentProvider {
             result.putInt("aod",options.aod);
             result.putBoolean("vivo_wallpaper",options.vivo!=null);
             result.putBoolean("continuous_aod",options.vivo!=null?options.vivo.animateInAod():options.cosmic!=0?options.cosmicContinuousAod:options.aod==0&&options.sailContinuousAod);
+            Bundle xiaomiClock=XiaomiState.lockClock(c);
+            if(xiaomiClock!=null){
+                result.putInt("aod",101);result.putBoolean("vivo_wallpaper",false);
+                result.putBoolean("continuous_aod",false);
+                result.putBundle("xiaomi_clock",xiaomiClock);
+            }
             return result;
         }catch(Exception error){throw new IllegalStateException("Scene channel unavailable",error);}
     }

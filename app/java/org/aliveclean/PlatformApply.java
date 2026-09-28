@@ -16,7 +16,7 @@ public final class PlatformApply {
         System.out.println("ALIVE_ADAPTER_STARTED");
         try{
             if(Process.myUid()!=1000)throw new SecurityException("Platform adapter requires the system UID");
-            if(args.length!=1||(!"local-aod".equals(args[0])&&!"panoramic-aod".equals(args[0])&&!"clock-startup".equals(args[0])))throw new IllegalArgumentException("Unsupported operation");
+            if(args.length!=1||(!"local-aod".equals(args[0])&&!"panoramic-aod".equals(args[0])&&!"clock-startup".equals(args[0])&&!"motion-permission".equals(args[0])))throw new IllegalArgumentException("Unsupported operation");
             if(android.os.Build.VERSION.SDK_INT<31)throw new UnsupportedOperationException("Local AOD adapter requires Android 12 or later");
             if("clock-startup".equals(args[0])){
                 stage="clock-startup";
@@ -28,6 +28,12 @@ public final class PlatformApply {
             Looper.prepareMainLooper();
             Class<?> thread=Class.forName("android.app.ActivityThread");Object instance=thread.getMethod("systemMain").invoke(null);
             Context context=(Context)thread.getMethod("getSystemContext").invoke(instance);
+            if("motion-permission".equals(args[0])){
+                stage="motion-permission";
+                boolean allowed=ColorOsMotionPermission.allow(context);
+                System.out.println("ALIVE_RESULT "+new JSONObject().put("ok",true).put("motionAllowed",allowed));
+                System.exit(0);
+            }
             WallpaperManager manager=WallpaperManager.getInstance(context);
             WallpaperInfo info=android.os.Build.VERSION.SDK_INT>=34?manager.getWallpaperInfo(WallpaperManager.FLAG_LOCK):manager.getWallpaperInfo();
             if(info==null&&manager.getWallpaperId(WallpaperManager.FLAG_LOCK)<0)info=manager.getWallpaperInfo();
@@ -57,6 +63,8 @@ public final class PlatformApply {
             // A missing vendor battery interface must not undo a successful wallpaper apply.
             try{ColorOsBackgroundPolicy.allow();report.put("backgroundAllowed",true);}
             catch(Exception background){report.put("backgroundAllowed",false).put("backgroundError",background.toString());}
+            try{report.put("motionAllowed",ColorOsMotionPermission.allow(context));}
+            catch(Exception motion){report.put("motionAllowed",false).put("motionError",motion.toString());}
             // Release both leases before exiting: System.exit does not run finally blocks.
             System.out.println("ALIVE_RESULT "+report);System.exit(0);
         }catch(Throwable error){

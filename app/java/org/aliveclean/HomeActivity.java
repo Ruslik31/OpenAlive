@@ -11,6 +11,7 @@ import java.util.ArrayList;
 public final class HomeActivity extends Activity {
     private SettingsUi ui;
     private final ArrayList<HomeScenePreview> previews=new ArrayList<>();
+    private int previewLoad;
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         // ColorOS can deny SystemUI's cold ContentProvider start even when the
@@ -60,11 +61,16 @@ public final class HomeActivity extends Activity {
             for(java.lang.reflect.Field field:lp.getClass().getFields())if(!java.lang.reflect.Modifier.isStatic(field.getModifiers())&&field.getType().isPrimitive())field.set(vivoLp,field.get(lp));
             replaceAnchor(vivoLp,wallpaper.getId(),alive.getId());parent.addView(vivo,vivoLp);firstText(vivo).setText("Vivo Alive 壁纸");
             vivo.setOnClickListener(v->startActivity(new Intent(this,VivoLibraryActivity.class)));
-            int extensionAnchor=vivo.getId();
+            View xiaomi=ui.inflate("view_system_center_wallpaper",parent);xiaomi.setId(View.generateViewId());ui.cardBackground(xiaomi);
+            ViewGroup.LayoutParams xiaomiLp=vivoLp.getClass().getConstructor(ViewGroup.LayoutParams.class).newInstance(vivoLp);
+            for(java.lang.reflect.Field field:vivoLp.getClass().getFields())if(!java.lang.reflect.Modifier.isStatic(field.getModifiers())&&field.getType().isPrimitive())field.set(xiaomiLp,field.get(vivoLp));
+            replaceAnchor(xiaomiLp,alive.getId(),vivo.getId());parent.addView(xiaomi,xiaomiLp);firstText(xiaomi).setText("小米Alive壁纸");
+            xiaomi.setOnClickListener(v->startActivity(new Intent(this,XiaomiLibraryActivity.class)));
+            int extensionAnchor=xiaomi.getId();
             for(boolean font:new boolean[]{false,true}){
                 View tile=ui.find(root,font?"system_center_font":"system_center_theme");Intent destination=ThemeLinks.resolve(this,font);
                 tile.setVisibility(destination==null?View.GONE:View.VISIBLE);
-                ViewGroup.LayoutParams tileLp=tile.getLayoutParams();replaceAnchor(tileLp,wallpaper.getId(),vivo.getId());tile.setLayoutParams(tileLp);
+                ViewGroup.LayoutParams tileLp=tile.getLayoutParams();replaceAnchor(tileLp,wallpaper.getId(),xiaomi.getId());tile.setLayoutParams(tileLp);
                 topGap(tile,12);
                 ((TextView)ui.find(tile,"item_text")).setText(font?"字体":"主题");
                 ((ImageView)ui.find(tile,"item_image")).setImageResource(ui.id("drawable",font?"icon_system_setting_font":"icon_system_setting_theme"));
@@ -87,7 +93,7 @@ public final class HomeActivity extends Activity {
                 ImageView image=(ImageView)ui.find(card,"item_image");ViewGroup holder=(ViewGroup)image.getParent();
                 int index=holder.indexOfChild(image);ViewGroup.LayoutParams params=image.getLayoutParams();holder.removeView(image);
                 HomeScenePreview preview=new HomeScenePreview(this,i);preview.setId(image.getId());holder.addView(preview,index,params);previews.add(preview);
-                card.setOnClickListener(v->openEditor(mode,false));card.setContentDescription(labels[i]+"预览");
+                card.setOnClickListener(v->{if(!preview.openXiaomi())openEditor(mode,false);});card.setContentDescription(labels[i]+"预览");
             }
         }catch(Exception error){SettingsScreen.fail(this,error);}
     }
@@ -111,6 +117,12 @@ public final class HomeActivity extends Activity {
         Intent intent=new Intent(this,MainActivity.class).putExtra("scene",mode);
         if(photo)intent.putExtra("photo_editor",true);startActivity(intent);
     }
-    @Override protected void onResume(){super.onResume();for(HomeScenePreview preview:previews)preview.start();}
-    @Override protected void onPause(){for(HomeScenePreview preview:previews)preview.stop();super.onPause();}
+    @Override protected void onResume(){super.onResume();int request=++previewLoad;
+        new Thread(()->{
+            XiaomiHomePreview.Card[] cards;
+            try{cards=XiaomiHomePreview.load(this);}catch(Exception error){android.util.Log.w("OpenAliveXiaomi","Home wallpaper selection",error);cards=new XiaomiHomePreview.Card[3];}
+            XiaomiHomePreview.Card[] selected=cards;runOnUiThread(()->{if(isDestroyed()||request!=previewLoad)return;for(int i=0;i<previews.size();i++)previews.get(i).start(selected[i]);});
+        },"HomeWallpaperPreviews").start();
+    }
+    @Override protected void onPause(){previewLoad++;for(HomeScenePreview preview:previews)preview.stop();super.onPause();}
 }

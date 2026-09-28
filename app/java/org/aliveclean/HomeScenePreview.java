@@ -3,7 +3,7 @@ package org.aliveclean;
 import android.content.Context;
 import android.graphics.*;
 import android.view.*;
-import android.widget.FrameLayout;
+import android.widget.*;
 
 /** Small, lifecycle-bound previews inside the official three cards. */
 final class HomeScenePreview extends FrameLayout implements TextureView.SurfaceTextureListener {
@@ -12,23 +12,36 @@ final class HomeScenePreview extends FrameLayout implements TextureView.SurfaceT
     private RenderLoop renderer;
     private Surface surface;
     private boolean active;
+    private final ImageView thumbnail;
+    private final EditorClockView clock;
+    private XiaomiHomePreview.Card card;
+    private XiaomiHomePreview.Clock xiaomiClock;
     HomeScenePreview(Context context,int mode){
         super(context);this.mode=mode;setBackgroundColor(Color.BLACK);
         setOutlineProvider(new ViewOutlineProvider(){public void getOutline(View view,Outline outline){outline.setRoundRect(0,0,getWidth(),getHeight(),10*getResources().getDisplayMetrics().density);}});
         setClipToOutline(true);texture=new TextureView(context);texture.setSurfaceTextureListener(this);addView(texture,new LayoutParams(-1,-1));
-        if(mode==0){
-            EditorClockView clock=new EditorClockView(context,null);addView(clock,new LayoutParams(-1,-1));
-            clock.scene(new SceneOptions(context.getSharedPreferences(SceneOptions.APPLIED,0)).aod==1);
-        }
+        thumbnail=new ImageView(context);thumbnail.setScaleType(ImageView.ScaleType.FIT_XY);thumbnail.setVisibility(GONE);addView(thumbnail,new LayoutParams(-1,-1));
+        clock=mode==0?new EditorClockView(context,null):null;if(clock!=null)addView(clock,new LayoutParams(-1,-1));
     }
-    void start(){active=true;if(texture.isAvailable()&&renderer==null)attach(texture.getSurfaceTexture(),texture.getWidth(),texture.getHeight());}
-    void stop(){active=false;if(renderer!=null){renderer.close();renderer=null;}if(surface!=null){surface.release();surface=null;}}
+    void start(){start(null);}
+    void start(XiaomiHomePreview.Card value){
+        stop();card=value;active=true;
+        if(xiaomiClock!=null){removeView(xiaomiClock);xiaomiClock=null;}
+        texture.setVisibility(card==null?VISIBLE:GONE);thumbnail.setVisibility(card==null?GONE:VISIBLE);thumbnail.setImageBitmap(card==null?null:card.image);
+        if(clock!=null)clock.scene(card==null&&new SceneOptions(getContext().getSharedPreferences(SceneOptions.APPLIED,0)).aod==1);
+        if(card!=null&&mode==0)try{xiaomiClock=new XiaomiHomePreview.Clock(getContext(),card.pack.clock);addView(xiaomiClock,new LayoutParams(-1,-1));xiaomiClock.active(true);}
+        catch(Exception|LinkageError error){android.util.Log.w("OpenAliveXiaomi","Home AOD clock",error);}
+        if(card==null&&texture.isAvailable())attach(texture.getSurfaceTexture(),texture.getWidth(),texture.getHeight());
+    }
+    boolean openXiaomi(){if(card==null)return false;getContext().startActivity(XiaomiPreviewActivity.intent(getContext(),card.pack,mode));return true;}
+    void stop(){active=false;releaseSurface();if(clock!=null)clock.scene(false);if(xiaomiClock!=null)xiaomiClock.active(false);}
+    private void releaseSurface(){if(renderer!=null){renderer.close();renderer=null;}if(surface!=null){surface.release();surface=null;}}
     private void attach(SurfaceTexture value,int width,int height){
-        if(!active||renderer!=null)return;
+        if(!active||card!=null||renderer!=null)return;
         renderer=new RenderLoop(getContext());renderer.mode(mode,false);surface=new Surface(value);renderer.attach(surface,width,height);renderer.visible(true);
     }
     public void onSurfaceTextureAvailable(SurfaceTexture value,int width,int height){attach(value,width,height);}
-    public void onSurfaceTextureSizeChanged(SurfaceTexture value,int width,int height){if(active){stop();start();}}
-    public boolean onSurfaceTextureDestroyed(SurfaceTexture value){stop();return true;}
+    public void onSurfaceTextureSizeChanged(SurfaceTexture value,int width,int height){releaseSurface();attach(value,width,height);}
+    public boolean onSurfaceTextureDestroyed(SurfaceTexture value){releaseSurface();return true;}
     public void onSurfaceTextureUpdated(SurfaceTexture value){}
 }

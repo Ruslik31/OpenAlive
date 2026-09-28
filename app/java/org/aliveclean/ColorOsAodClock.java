@@ -15,6 +15,8 @@ final class ColorOsAodClock {
     private WeakReference<Object> controller=new WeakReference<>(null);
     private Context context;
     private volatile boolean enabled;
+    private boolean xiaomi;
+    private boolean xiaomiEnterPending,xiaomiEnterAnimated;
     private boolean installed,failed,widgetFailure;
     private String installError="";
     private int mode=-1;
@@ -68,11 +70,21 @@ final class ColorOsAodClock {
     String installError(){return installError;}
     boolean usesIndependentClock(){return enabled;}
     void configure(Context context,boolean selected,int style){
-        this.context=context;enabled=installed&&selected&&style==1;if(!enabled)wakeToken=0;reconcile();
+        configure(context,selected,style,null);
+    }
+    void configure(Context context,boolean selected,int style,Bundle metadata){
+        this.context=context;xiaomi=style==101&&metadata!=null;
+        if(!xiaomi)xiaomiEnterPending=false;
+        host.configure(xiaomi?metadata:null);
+        enabled=installed&&selected&&(style==1||xiaomi);if(!enabled||xiaomi)wakeToken=0;reconcile();
     }
     void scene(int value,boolean animate){
         if(value!=mode){
-            wakeToken=enabled&&mode==0&&value==1&&animate&&host.shown()?++wakeSerial:0;
+            xiaomiEnterPending=enabled&&xiaomi&&value==0;
+            xiaomiEnterAnimated=animate;
+            // Only LiuGuang reports the expanded-photo submitted frame. Xiaomi
+            // animates its own AOD face; the lock clock remains under ColorOS.
+            wakeToken=enabled&&!xiaomi&&mode==0&&value==1&&animate&&host.shown()?++wakeSerial:0;
             maskAnimation=null;contentAlpha=1;
         }
         mode=value;main.removeCallbacks(reconcile);reconcile();if(enabled&&mode==0){main.postDelayed(reconcile,80);main.postDelayed(reconcile,350);}
@@ -100,7 +112,7 @@ final class ColorOsAodClock {
     }
     private void reconcile(){
         if(!enabled||context==null){host.hide();return;}
-        if(mode!=0){if(mode==2)host.leaveUnlocked();else host.leave(wakeToken!=0);return;}
+        if(mode!=0){if(mode==2)host.leaveUnlocked();else if(xiaomi)host.leaveXiaomi();else host.leave(wakeToken!=0);return;}
         try{
             Object data=XposedHelpers.callStaticMethod(XposedHelpers.findClass("com.oplus.systemui.aod.aodclock.constant.AodData",loader),"getInstance",context);
             if(!(boolean)XposedHelpers.callMethod(data,"isPanoramicAod")){host.hide();return;}
@@ -142,6 +154,9 @@ final class ColorOsAodClock {
             if(fresh&&!showing)contentAlpha=0;
             if(content!=null)host.showNative((ViewGroup)root,content,(View)scope);
             else host.show((ViewGroup)root,t,d,(View)scope);
+            if(xiaomiEnterPending&&host.shown()){
+                host.enterXiaomi(xiaomiEnterAnimated);xiaomiEnterPending=false;
+            }
             host.contentAlpha(contentAlpha);host.tick(System.currentTimeMillis());
             bindWidgets(current);
             if(fresh&&host.shown()){if(Diagnostics.TRACE)android.util.Log.i("AliveClean","AOD clock attached; system lock clock retained");}

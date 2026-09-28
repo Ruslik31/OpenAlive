@@ -79,7 +79,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
     private void applyDraft() {
         if(importing)return;
         android.app.WallpaperInfo current=WallpaperManager.getInstance(this).getWallpaperInfo();
-        if(current!=null&&getPackageName().equals(current.getPackageName())){commitDraft();return;}
+        if(current!=null&&new ComponentName(this,CleanWallpaper.class).equals(current.getComponent())){commitDraft();return;}
         // The platform checks ambient permission when binding the service. An app-side
         // permission query follows a different path and cannot diagnose that adapter.
         Intent intent=new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
@@ -120,7 +120,7 @@ public final class MainActivity extends Activity implements TextureView.SurfaceT
             awaitingApply=false;
             WallpaperManager manager=WallpaperManager.getInstance(this);
             android.app.WallpaperInfo info=manager.getWallpaperInfo();
-            boolean bound=info!=null&&getPackageName().equals(info.getPackageName());
+            boolean bound=info!=null&&new ComponentName(this,CleanWallpaper.class).equals(info.getComponent());
             if(bound&&(result==RESULT_OK||manager.getWallpaperId(WallpaperManager.FLAG_SYSTEM)!=previousWallpaperId)){
                 commitDraft();
             }else if(result==RESULT_OK)toast("系统未切换到此壁纸，应用没有成功");
