@@ -43,7 +43,7 @@ public class XiaomiPreviewActivity extends Activity implements SurfaceHolder.Cal
         scene=Math.max(0,Math.min(2,getIntent().getIntExtra("scene",0)));
         if(state!=null){scene=state.getInt("scene");land=state.getInt("land");choosing=state.getBoolean("choosing");awaitingPicker=state.getBoolean("picker");previousLand=state.getInt("previousLand");previousWallpaperId=state.getInt("previousId");previousLockId=state.getInt("previousLockId");busy=awaitingPicker;}
         new Thread(()->{try{
-            XiaomiPacks.Pack p=XiaomiPacks.get(this,getClass().getSimpleName().toLowerCase(Locale.ROOT));File file=XiaomiPacks.find(this,p);if(file==null)throw new IOException("请先导入壁纸包");
+            XiaomiPacks.Pack p=XiaomiPacks.get(this,getClass().getSimpleName().toLowerCase(Locale.ROOT));File file=XiaomiPacks.find(this,p);
             XiaomiUi.bundle(this);XiaomiPlayer.Runtime runtime=XiaomiPlayer.prepare(this,p.id,file,p.digest);int saved=XiaomiPacks.land(this,p);
             runOnUiThread(()->{if(isDestroyed())return;try{pack=p;if(state==null)land=saved;ui=new XiaomiUi(this);setup(file,runtime);}catch(Exception e){failure(e);}});
         }catch(Exception e){runOnUiThread(()->failure(e));}},"XiaomiPreviewLoad").start();

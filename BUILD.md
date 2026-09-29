@@ -22,4 +22,6 @@ python3 tools/build_release.py
 
 资源表以未压缩形式存储并按 4096 字节对齐，签名后再次检查。安装包暂不包含视频壁纸。
 
-小米超级壁纸的列表和预览使用 `app/assets/xiaomi/ui.apk` 中的原版控件，构建会校验所有保留文件。需要重新导入时执行 `python tools/import_xiaomi_ui.py ThemeManager.apk 场景APK目录`，输入版本固定并校验原包；目录内应有 `moon.apk`、`snowmountain.apk`、`geometry.apk`、`saturn.apk`、`earth.apk` 和 `mars.apk`。六个场景包不打进 OpenAlive，运行时复用已安装的匹配原包，也可在列表里选择本地 APK 导入，导入后无需安装原应用或联网。
+小米超级壁纸的列表和预览使用 `app/assets/xiaomi/ui.apk` 中的原版控件，构建会校验所有保留文件。需要重新生成时执行 `python tools/import_xiaomi_ui.py ThemeManager.apk 场景APK目录`，再执行 `python tools/import_xiaomi_packs.py 场景APK目录`。输入版本固定并校验原包；目录内应有 `moon.apk`、`snowmountain.apk`、`geometry.apk`、`saturn.apk`、`earth.apk` 和 `mars.apk`。
+
+六个场景以共享的 XZ 数据块内置，首次使用自动还原原包。构建逐块解压并校验六个完整 APK 的 SHA-256，保留原始签名、ZIP 布局和全部素材；新鲜检出可直接编译，不需要本地反编译目录。XZ for Java 1.12 的固定原版源码位于 `vendor/xz/`，编译其 Java 8 部分，不引入额外原生库。`.xz` 块在最终 APK 内保持 STORED，避免再次压缩增加体积与首用开销。

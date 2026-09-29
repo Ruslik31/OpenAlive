@@ -3,13 +3,12 @@ package org.aliveclean;
 import android.content.*;
 import android.content.pm.*;
 import android.content.res.Resources;
-import android.net.Uri;
 import java.io.*;
 import java.security.MessageDigest;
 import java.util.*;
 import org.json.*;
 
-/** Immutable, checksum-pinned original runtime packs; no downloads or APK installation. */
+/** Built-in, checksum-pinned original runtime packs; no downloads or APK installation. */
 final class XiaomiPacks {
     static final class Pack {
         final String id,title,digest; final long bytes; final int lands;
@@ -31,21 +30,12 @@ final class XiaomiPacks {
     static String hash(File f)throws Exception{MessageDigest d=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(f)){byte[] b=new byte[65536];for(int n;(n=in.read(b))!=-1;)d.update(b,0,n);}StringBuilder s=new StringBuilder();for(byte b:d.digest())s.append(String.format(Locale.ROOT,"%02x",b&255));return s.toString();}
     static File find(Context c,Pack p)throws Exception{
         File stored=new File(directory(c),p.digest+".apk");
-        if(stored.isFile()){verify(stored,p);return stored;}
+        if(stored.isFile())try{verify(stored,p);return stored;}catch(IOException corrupt){}
         try{ApplicationInfo a=c.getPackageManager().getApplicationInfo(p.pkg(),0);File installed=new File(a.sourceDir);verify(installed,p);return installed;}
-        catch(PackageManager.NameNotFoundException|IOException missingOrDifferentVersion){return null;}
+        catch(PackageManager.NameNotFoundException|IOException missingOrDifferentVersion){}
+        return XiaomiBuiltinPacks.prepare(c,p);
     }
     static void verify(File f,Pack p)throws Exception{if(f.length()!=p.bytes||!p.digest.equals(hash(f)))throw new IOException("壁纸包版本不匹配："+p.title);}
-    static File importPack(Context c,Pack p,Uri uri)throws Exception{
-        File file=new File(directory(c),p.digest+".apk"),part=File.createTempFile("import-",".part",directory(c));
-        try{
-            try(InputStream in=c.getContentResolver().openInputStream(uri);FileOutputStream out=new FileOutputStream(part)){
-                if(in==null||!part.setReadOnly())throw new IOException("无法读取壁纸包");
-                byte[] b=new byte[65536];long bytes=0;for(int n;(n=in.read(b))!=-1;){bytes+=n;if(bytes>p.bytes)throw new IOException("壁纸包大小不匹配");out.write(b,0,n);}out.getFD().sync();
-            }
-            verify(part,p);if(!part.renameTo(file))throw new IOException("无法保存壁纸包");return file;
-        }finally{if(part.exists())part.delete();}
-    }
     static Resources resources(Context c,Pack p,File f)throws Exception{
         ApplicationInfo info=new ApplicationInfo();info.packageName=p.pkg();info.sourceDir=info.publicSourceDir=f.getPath();info.uid=android.os.Process.myUid();return c.getPackageManager().getResourcesForApplication(info);
     }

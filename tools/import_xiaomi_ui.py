@@ -50,8 +50,8 @@ def main():
     for family,title in titles:
         apk = a.scenes / (family+'.apk')
         catalog.append({'id':family,'title':title,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),'bytes':apk.stat().st_size,'lands':5 if family in ('earth','moon','mars') else 1,'clock':clock_metadata(apk)})
-        # Catalog banners are decoded from each original APK at runtime when
-        # installed/imported; bundled originals allow browsing without a pack.
+        # Keep the original banners separate so browsing the catalog does not
+        # need to reconstruct the runtime packs first.
         with zipfile.ZipFile(apk) as z:
             names = [n for n in z.namelist() if n.startswith('res/') and n.rsplit('/',1)[-1] in ('banner.png','banner.jpg','banner.webp',family+'_banner.png')]
             if not names:

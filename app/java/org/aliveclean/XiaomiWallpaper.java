@@ -37,7 +37,7 @@ public class XiaomiWallpaper extends WallpaperService implements DisplayManager.
         filter.addAction(Intent.ACTION_DATE_CHANGED);filter.addAction(Intent.ACTION_TIME_CHANGED);filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         if(Build.VERSION.SDK_INT>=33)registerReceiver(screen,filter,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(screen,filter);
         new Thread(()->{try{
-            XiaomiPacks.Pack p=XiaomiPacks.get(this,getClass().getSimpleName().toLowerCase(Locale.ROOT));File file=XiaomiPacks.find(this,p);if(file==null)throw new IllegalStateException("壁纸包已移除，请重新导入");
+            XiaomiPacks.Pack p=XiaomiPacks.get(this,getClass().getSimpleName().toLowerCase(Locale.ROOT));File file=XiaomiPacks.find(this,p);
             int saved=XiaomiPacks.land(this,p);XiaomiPlayer.Runtime loaded=XiaomiPlayer.prepare(this,p.id,file,p.digest);
             main.post(()->{if(destroyed)return;pack=p;land=saved;runtime=loaded;
                 Bundle b=new Bundle();b.putBinder("client",client.getBinder());try{XiaomiState.call(this,"subscribe",b);}catch(RuntimeException e){failure(e);}select();});

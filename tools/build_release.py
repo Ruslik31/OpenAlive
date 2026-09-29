@@ -10,7 +10,7 @@ SDK=Path(os.environ.get('ANDROID_HOME',str(Path.home()/'AppData/Local/Android/Sd
 JAVA=Path(os.environ.get('JAVA_HOME','C:/Program Files/Java/jdk-17' if WIN else '/usr/lib/jvm/java-17-openjdk-amd64'))/'bin'
 BT=SDK/'build-tools/35.0.0';ANDROID=SDK/'platforms/android-35/android.jar'
 OUT=ROOT/'build/release';DIST=ROOT/'dist';VENDOR=ROOT/'vendor/flyme'
-for folder in ['classes','dex','generated','ui-api']:
+for folder in ['classes','dex','generated','ui-api','xz-source']:
     p=(OUT/folder).resolve()
     if not p.is_relative_to((ROOT/'build').resolve()):raise ValueError(p)
     if p.exists():shutil.rmtree(p)
@@ -53,7 +53,17 @@ run(BT/('aapt2'+EXE),'compile','--dir',ROOT/'app/res','-o',OUT/'app-res.zip')
 run(BT/('aapt2'+EXE),'link','-o',OUT/'base.apk','--manifest',ROOT/'app/AndroidManifest.xml','-I',ANDROID,
     '--auto-add-overlay','--java',OUT/'generated','-A',ROOT/'app/assets',OUT/'vendor-res.zip','-R',OUT/'app-res.zip')
 javac_args('api',['-encoding','UTF-8','-source','8','-target','8','-bootclasspath',ANDROID,'-d',OUT/'ui-api',*sorted((ROOT/'tools/ui-api').rglob('*.java'))])
-sources=sorted((ROOT/'app/java').rglob('*.java'))+sorted((OUT/'generated').rglob('*.java'))
+# Compile the Java 8 decoder from the pinned upstream sources. No decoder APK
+# download, native executable or runtime network dependency is needed.
+xz_source=ROOT/'vendor/xz/xz-1.12-sources.jar'
+if sha(xz_source)!='c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b':raise ValueError('XZ source checksum mismatch')
+with zipfile.ZipFile(xz_source) as upstream:
+    for entry in upstream.infolist():
+        if not entry.filename.startswith('org/tukaani/xz/') or not entry.filename.endswith('.java'):continue
+        target=(OUT/'xz-source'/entry.filename).resolve()
+        if not target.is_relative_to((OUT/'xz-source').resolve()):raise ValueError(entry.filename)
+        target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(upstream.read(entry))
+sources=sorted((ROOT/'app/java').rglob('*.java'))+sorted((OUT/'generated').rglob('*.java'))+sorted((OUT/'xz-source').rglob('*.java'))
 javac_args('app',['-encoding','UTF-8','-source','8','-target','8','-bootclasspath',str(ANDROID)+os.pathsep+str(BT/'core-lambda-stubs.jar'),
     '-classpath',str(xposed)+os.pathsep+str(OUT/'ui-api'),'-d',OUT/'classes',*sources])
 # Use the Java launcher's argument file as well: a fresh checkout in a longer

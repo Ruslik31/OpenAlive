@@ -13,9 +13,11 @@ import java.util.*;
 
 /** Original Xiaomi list shell and row widgets. Only the local data source is replaced. */
 public final class XiaomiLibraryActivity extends Activity {
-    private XiaomiUi ui; private XiaomiPacks.Pack importing; private boolean busy;
+    private XiaomiUi ui; private boolean busy;
+    private int openRequest; private ProgressDialog preparing;
+    private final Handler main=new Handler(Looper.getMainLooper());
     @Override public void onCreate(Bundle state){
-        super.onCreate(state);if(state!=null&&state.containsKey("import"))try{importing=XiaomiPacks.get(this,state.getString("import"));}catch(Exception ignored){}
+        super.onCreate(state);
         new Thread(()->{try{XiaomiUi.bundle(this);runOnUiThread(()->{if(!isDestroyed())showList();});}catch(Exception e){runOnUiThread(()->failure(e));}},"XiaomiUiLoad").start();
     }
     private void showList(){try{
@@ -44,15 +46,19 @@ public final class XiaomiLibraryActivity extends Activity {
         XiaomiUi.call(recycler,"setAdapter",new Class[]{ui.loader.loadClass("androidx.recyclerview.widget.RecyclerView$Adapter")},adapter);setContentView(shell);
     }catch(Exception e){failure(e);}}
     private void open(XiaomiPacks.Pack pack){if(busy)return;busy=true;
-        new Thread(()->{try{File apk=XiaomiPacks.find(this,pack);runOnUiThread(()->{busy=false;if(isDestroyed())return;if(apk==null)choosePack(pack);else launch(pack);});}catch(Exception e){runOnUiThread(()->{busy=false;failure(e);});}},"XiaomiPackCheck").start();
+        int request=++openRequest;
+        main.postDelayed(()->{if(request!=openRequest||!busy||isFinishing()||isDestroyed())return;
+            preparing=new ProgressDialog(this);preparing.setMessage("正在准备"+pack.title+"，首次使用请稍候…");preparing.setIndeterminate(true);
+            preparing.setOnCancelListener(dialog->{openRequest++;busy=false;preparing=null;});preparing.show();
+        },300);
+        new Thread(()->{try{XiaomiPacks.find(this,pack);runOnUiThread(()->completeOpen(request,pack,null));}catch(Exception e){runOnUiThread(()->completeOpen(request,pack,e));}},"XiaomiPackCheck").start();
     }
+    private void completeOpen(int request,XiaomiPacks.Pack pack,Exception error){if(request!=openRequest)return;busy=false;dismissPreparing();
+        if(isFinishing()||isDestroyed())return;if(error==null)launch(pack);else failure(error);
+    }
+    private void dismissPreparing(){if(preparing!=null){preparing.dismiss();preparing=null;}}
+    @Override public void onDestroy(){openRequest++;busy=false;main.removeCallbacksAndMessages(null);dismissPreparing();super.onDestroy();}
     private void launch(XiaomiPacks.Pack p){startActivity(new Intent().setClassName(this,"org.aliveclean.XiaomiPreviewActivity$"+Character.toUpperCase(p.id.charAt(0))+p.id.substring(1)));}
-    private void choosePack(XiaomiPacks.Pack p){importing=p;new AlertDialog.Builder(this).setTitle("导入"+p.title).setMessage("选择已保存的小米原版壁纸 APK。导入后即可离线使用，无需安装原版应用。").setNegativeButton("取消",null).setPositiveButton("选择壁纸包",(d,w)->{try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),1);}catch(RuntimeException e){failure(e);}}).show();}
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=1||result!=RESULT_OK||data==null||data.getData()==null||importing==null)return;
-        XiaomiPacks.Pack pack=importing;busy=true;Toast.makeText(this,"正在校验壁纸包",Toast.LENGTH_SHORT).show();
-        new Thread(()->{try{XiaomiPacks.importPack(this,pack,data.getData());runOnUiThread(()->{busy=false;if(!isDestroyed())launch(pack);});}catch(Exception e){runOnUiThread(()->{busy=false;failure(e);});}},"XiaomiPackImport").start();
-    }
-    @Override protected void onSaveInstanceState(Bundle b){super.onSaveInstanceState(b);if(importing!=null)b.putString("import",importing.id);}
     @Override public boolean onMenuItemSelected(int feature,MenuItem item){if(item.getItemId()==android.R.id.home){finish();return true;}return super.onMenuItemSelected(feature,item);}
     private void failure(Exception e){String reason=XiaomiFailure.describe(this,"Xiaomi catalog",e);android.util.Log.e("OpenAliveXiaomi","Xiaomi catalog",e);if(!isDestroyed())new AlertDialog.Builder(this).setTitle("小米壁纸暂时无法打开").setMessage(reason).setPositiveButton("确定",null).show();}
 }

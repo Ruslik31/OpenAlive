@@ -43,4 +43,5 @@ __pycache__/
 !/tools/import_native_clock_previews.py
 !/tools/import_xiaomi_ui.py
 !/tools/check_xiaomi_assets.py
+!/tools/import_xiaomi_packs.py
 !/tools/ui-api/
