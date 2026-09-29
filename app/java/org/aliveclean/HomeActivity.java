@@ -66,17 +66,30 @@ public final class HomeActivity extends Activity {
             for(java.lang.reflect.Field field:vivoLp.getClass().getFields())if(!java.lang.reflect.Modifier.isStatic(field.getModifiers())&&field.getType().isPrimitive())field.set(xiaomiLp,field.get(vivoLp));
             replaceAnchor(xiaomiLp,alive.getId(),vivo.getId());parent.addView(xiaomi,xiaomiLp);firstText(xiaomi).setText("小米Alive壁纸");
             xiaomi.setOnClickListener(v->startActivity(new Intent(this,XiaomiLibraryActivity.class)));
-            int extensionAnchor=xiaomi.getId();
+            // The original tiles are pinned to opposite screen edges, while the
+            // wallpaper bars have a centered content width. Put the original
+            // tiles in one equally divided row with that same width instead.
+            LinearLayout shortcuts=new LinearLayout(this);shortcuts.setId(View.generateViewId());
+            shortcuts.setOrientation(LinearLayout.HORIZONTAL);shortcuts.setBaselineAligned(false);
+            ViewGroup.LayoutParams shortcutLp=wallpaper.getLayoutParams().getClass().getConstructor(ViewGroup.LayoutParams.class).newInstance(wallpaper.getLayoutParams());
+            for(java.lang.reflect.Field field:shortcutLp.getClass().getFields())if(!java.lang.reflect.Modifier.isStatic(field.getModifiers())&&field.getType().isPrimitive())field.set(shortcutLp,field.get(wallpaper.getLayoutParams()));
+            replaceAnchor(shortcutLp,ui.id("id","system_layout_container"),xiaomi.getId());
+            shortcutLp.height=ViewGroup.LayoutParams.WRAP_CONTENT;parent.addView(shortcuts,shortcutLp);
+            int shortcutCount=0;
             for(boolean font:new boolean[]{false,true}){
                 View tile=ui.find(root,font?"system_center_font":"system_center_theme");Intent destination=ThemeLinks.resolve(this,font);
                 tile.setVisibility(destination==null?View.GONE:View.VISIBLE);
-                ViewGroup.LayoutParams tileLp=tile.getLayoutParams();replaceAnchor(tileLp,wallpaper.getId(),xiaomi.getId());tile.setLayoutParams(tileLp);
-                topGap(tile,12);
+                parent.removeView(tile);
+                LinearLayout.LayoutParams tileLp=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);
+                if(destination!=null&&shortcutCount>0)tileLp.setMarginStart(ui.getResources().getDimensionPixelSize(ui.id("dimen","common_15dp")));
+                shortcuts.addView(tile,tileLp);
                 ((TextView)ui.find(tile,"item_text")).setText(font?"字体":"主题");
                 ((ImageView)ui.find(tile,"item_image")).setImageResource(ui.id("drawable",font?"icon_system_setting_font":"icon_system_setting_theme"));
                 ui.cardBackground(tile);tile.setOnClickListener(v->ThemeLinks.open(this,destination));
-                if(destination!=null)extensionAnchor=tile.getId();
+                if(destination!=null)shortcutCount++;
             }
+            shortcuts.setVisibility(shortcutCount==0?View.GONE:View.VISIBLE);
+            int extensionAnchor=shortcutCount==0?xiaomi.getId():shortcuts.getId();
             View extensions=ui.find(root,"system_center_extension");ViewGroup.LayoutParams extensionsLp=extensions.getLayoutParams();
             replaceAnchor(extensionsLp,ui.id("id","system_center_theme"),extensionAnchor);extensions.setLayoutParams(extensionsLp);
             View light=ui.find(root,"system_more_light_effect");
